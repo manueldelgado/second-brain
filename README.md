@@ -1,188 +1,246 @@
 # Second Brain Automation
 
-Automated newsletter ingestion and inbox classification for your Obsidian Second Brain vault.
+Automate your [Obsidian](https://obsidian.md) knowledge management workflow. This CLI tool ingests newsletters from Gmail, summarizes and classifies them with Claude, and keeps your vault organized — so you can focus on reading and thinking instead of filing.
+
+## What It Does
+
+**Newsletter ingestion** — Connects to Gmail, fetches emails from your newsletter subscriptions, extracts the content, sends it to Claude for summarization and tagging, and creates structured notes in your vault. Processed emails are labelled in Gmail so nothing gets re-processed.
+
+**Inbox classification** — Scans your vault's inbox folder for untagged notes (clippings, PDFs, anything you dropped in manually), classifies them with Claude, and moves them to your notes folder.
+
+Both pipelines support synchronous and batch execution modes, dry-run previews, and graceful error handling where one failure never stops the rest.
 
 ## Features
 
-- **Newsletter Ingestion** — Fetch emails from any number of newsletter sources, summarize with Claude, auto-classify with tags, create notes
-- **Inbox Classification** — Scan inbox, classify untagged items, move to notes
-- **Batch Mode** — Submit all items to Anthropic's batch API in one call (50% cost reduction); fire-and-forget with `--no-wait` and finalize later with `resume-batch`
-- **Prompt Caching** — System prompt cached across calls; saves ~90% of system-prompt token cost per run
-- **Gmail Labelling** — Processed emails are automatically labelled "Newsletters" in Gmail (label created if absent)
-- **Smart Deduplication** — Two-layer Gmail filtering (coarse date query + precise `internalDate` client-side check) prevents re-processing emails from the same calendar day
-- **Content Extraction** — Clean HTML emails to extract main content (removes boilerplate, ads, navigation)
-- **Smart Error Recovery** — Malformed LLM responses are parsed gracefully; one failure doesn't stop the batch
-- **Dry-Run Mode** — Preview pipeline output without writing to vault or touching Gmail
+- **AI-powered classification** — Claude reads your content and assigns tags from your personal taxonomy, writes a summary, and extracts key takeaways
+- **Batch mode** — Submit all items to Anthropic's Messages Batches API in one call (50% cost reduction); fire-and-forget with `--no-wait` and finalize later with `resume-batch`
+- **Prompt caching** — System prompt cached across calls, saving ~90% of system-prompt token cost per run
+- **Smart deduplication** — Two-layer Gmail filtering (coarse date query + precise millisecond-level client-side check) prevents re-processing
+- **Content extraction** — HTML emails are cleaned to extract main content, stripping boilerplate, ads, and navigation
+- **Dry-run mode** — Preview the full pipeline output without writing to your vault or touching Gmail
+- **Error isolation** — One item failing never stops the batch; errors accumulate in a report
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Prerequisites
+
+- Python 3.12+
+- An [Anthropic API key](https://console.anthropic.com/settings/api-keys) with credits
+- A Google Cloud project with the Gmail API enabled and OAuth credentials ([setup guide](https://developers.google.com/gmail/api/quickstart/python))
+- An Obsidian vault (or any folder — the tool works with plain Markdown files)
+
+### 1. Install
 
 ```bash
+git clone https://github.com/manueldelgado/second-brain.git
+cd second-brain
 pip install -e .
 ```
 
-### 2. Set Up API Keys
+### 2. Configure
 
-**Anthropic (Claude):**
-- Go to [console.anthropic.com](https://console.anthropic.com/settings/api-keys)
-- Create an API key and add credits
-- Create `.env`:
-
-```bash
-cp .env.example .env
-# Edit .env and paste your API key
-```
-
-**Gmail:**
-- First run opens a browser for OAuth consent (`gmail.modify` scope required for labelling)
-- Credentials: `~/.config/second-brain/gmail_credentials.json`
-- Token auto-refreshed: `~/.config/second-brain/gmail_token.json`
-
-### 3. Configure and Scaffold the Vault
-
-The `config/` directory is a private git submodule and will be empty after cloning. Copy the provided examples as a starting point:
+Copy the example config files and edit them:
 
 ```bash
 cp -r config.example/ config/
-# Edit config/settings.yaml  — set your vault path
-# Edit config/newsletters.yaml — add your newsletter sources
-# Edit config/taxonomy.yaml  — define your tag vocabulary
 ```
 
-Then validate and scaffold:
+You need to edit three files:
 
-```bash
-second-brain config check       # verify settings are valid
-second-brain vault init         # create folders + copy note templates
+**`config/settings.yaml`** — Point to your vault and review defaults:
+```yaml
+vault:
+  root: "~/Documents/MyVault"   # Your Obsidian vault path
+llm:
+  model: "claude-haiku-4-5-20251001"  # Fast and cheap; upgrade to Sonnet for better results
+processing:
+  default_lookback_days: 7      # How far back to look for new newsletter sources
 ```
 
-`vault init` creates the six standard folders (`00 Inbox/` through `05 Templates/`) and installs the four note templates (Newsletter, Web Clipping, Paper, Book) into `05 Templates/`. It is safe to re-run — existing templates are skipped unless you pass `--force`.
-
-> **What `vault init` does not create:** tag-specific database views (`.base` files). These depend on your personal taxonomy and must be built inside Obsidian using the Bases plugin after you have defined `config/taxonomy.yaml`. Good structural starting points: filter by `status: inbox` (Inbox), `type` field (All Notes), `type: newsletter` (Newsletters), `type: paper` or `type: book` (Reading List).
-
-### 4. Test with Dry-Run
-
-```bash
-second-brain newsletters --dry-run -v
-second-brain inbox --dry-run -v
-second-brain run --dry-run -v       # Both pipelines
+**`config/newsletters.yaml`** — Add your newsletter sources:
+```yaml
+sources:
+  - email: "hello@newsletter.com"
+    name: "My Favourite Newsletter"
+  - email: "digest@another.com"
+    name: "Weekly Digest"
 ```
 
-### 5. Run for Real
+**`config/taxonomy.yaml`** — Define your personal tag vocabulary (see [Building Your Taxonomy](#building-your-taxonomy) below).
+
+### 3. Set Up API Keys
 
 ```bash
-# Synchronous (one item at a time)
+cp .env.example .env
+# Edit .env and paste your Anthropic API key
+```
+
+For Gmail, place your OAuth client credentials at `~/.config/second-brain/gmail_credentials.json`. The first run will open a browser for OAuth consent and save the token automatically.
+
+### 4. Scaffold Your Vault
+
+```bash
+second-brain config check    # Validate your configuration
+second-brain vault init      # Create folders and install note templates
+```
+
+This creates the standard folder structure and copies four note templates (Newsletter, Web Clipping, Paper, Book) into your vault's Templates folder. Safe to re-run.
+
+### 5. Test with Dry-Run
+
+```bash
+second-brain newsletters --dry-run -v   # Preview newsletter ingestion
+second-brain inbox --dry-run -v         # Preview inbox classification
+second-brain run --dry-run -v           # Preview both pipelines
+```
+
+### 6. Run for Real
+
+```bash
+# Synchronous — one item at a time
 second-brain newsletters
 second-brain inbox
-second-brain run
+second-brain run                          # Both pipelines
 
-# Batch mode (all items submitted at once — 50% cheaper)
+# Batch mode — all items submitted at once, 50% cheaper
 second-brain newsletters --batch
 second-brain run --batch
 
-# Batch + fire-and-forget (submit now, finalize later)
+# Fire-and-forget — submit now, finalize later
 second-brain run --batch --no-wait
-second-brain resume-batch           # Run once results are ready
+second-brain resume-batch                 # Poll and finalize when results are ready
 ```
 
-## Configuration
+## Building Your Taxonomy
 
-- `config/settings.yaml` — Vault path, LLM model, Gmail scopes, batch settings, processing defaults
-- `config/newsletters.yaml` — Newsletter sources (email → name). New entries are picked up automatically on the next run.
-- `config/taxonomy.yaml` — 45 tags (33 descriptive + 12 functional) + classification rules
+The taxonomy is the heart of the system — it defines the tags Claude can assign to your notes. A good taxonomy reflects how _you_ think about your interests, not a generic classification scheme.
 
-## Vault Setup
+The example in `config.example/taxonomy.yaml` is intentionally minimal. Here's how to build your own:
 
-```
-Personal (Obsidian vault root)
-├── 00 Inbox/           ← unclassified items
-├── 01 Notes/           ← all classified notes
-├── 02 MOCs/            ← curated topic maps
-├── 03 Bases/           ← database views
-├── 04 Assets/          ← PDFs, images
-└── 05 Templates/       ← Obsidian templates
+**1. Start with your interests.** What topics do you read about? What do you want to track over time? These become your **descriptive tags** — they describe what content is _about_.
+
+```yaml
+descriptive:
+  tech/ai: "Artificial intelligence, machine learning, LLMs"
+  tech/web: "Web development, browsers, standards"
+  finance/markets: "Stock markets, investing, trading"
+  health/nutrition: "Diet, nutrition science, food"
 ```
 
-Each newsletter note has:
-- **Frontmatter** — title, source, author, newsletter, published, `gmail_url` (link to original email), created, type, status, tags, description
-- **Summary** — AI-generated 2-4 sentence summary (always in English)
-- **Key Takeaways** — bullet points
-- **Content** — full original email text
-- **My Notes / Related** — empty on creation, for personal use
+**2. Think about how you use content.** Do you teach? Write a blog? Do research? These become your **functional tags** — they describe what you can _do_ with the content.
+
+```yaml
+functional:
+  func/teaching: "Useful as teaching material or case study"
+  func/blog: "Potential input for blog posts or articles"
+  func/reference: "Reference material to keep handy"
+```
+
+**3. Write classification rules.** These are natural-language instructions that guide the LLM's tagging behaviour:
+
+```yaml
+classification_rules:
+  - "Use 1-3 descriptive tags and 0-2 functional tags per note"
+  - "Be specific: prefer tech/ai over tech/ if the content is primarily about AI"
+  - "When in doubt, use fewer tags rather than misclassify"
+```
+
+**Tips:**
+- Use hierarchical tags with `/` as separator (e.g., `tech/ai`, `tech/web`) — Obsidian renders these as nested tags
+- Start small (10-20 tags) and expand as you see what content you actually receive
+- Run `--dry-run` after changes to see how the LLM classifies with your new taxonomy before committing
+
+## Vault Structure
+
+`vault init` creates this folder layout:
+
+```
+Your Vault/
+├── 00 Inbox/       ← Drop anything here for classification
+├── 01 Notes/       ← All classified notes land here
+├── 02 MOCs/        ← Maps of Content (manual curation)
+├── 03 Bases/       ← Database views (Obsidian Bases plugin)
+├── 04 Assets/      ← PDFs, images, attachments
+└── 05 Templates/   ← Note templates used by the tool
+```
+
+Each generated note includes YAML frontmatter (title, source, author, tags, dates, description), an AI-generated summary, key takeaways, the original content, and empty sections for your own notes and related links.
+
+> **Database views** are not created by `vault init` because they depend on your personal taxonomy. After defining your tags, build views inside Obsidian using the [Bases](https://obsidian.md/plugins?id=bases) plugin. Useful starting points: filter by `status: inbox`, by `type: newsletter`, or by specific tags.
+
+## CLI Reference
+
+```bash
+second-brain config check                  # Validate configuration
+second-brain config show                   # Show resolved settings
+
+second-brain newsletters [--dry-run] [-v] [--batch] [--no-wait]
+second-brain inbox [--dry-run] [-v] [--batch] [--no-wait]
+second-brain run [--dry-run] [-v] [--batch] [--no-wait]
+
+second-brain resume-batch                  # Finalize pending batch jobs
+second-brain batch status [--refresh]      # List pending batches
+second-brain batch cancel <batch_id>       # Cancel a batch
+
+second-brain vault init [--force]          # Scaffold vault folders + templates
+```
 
 ## How It Works
 
 ### Newsletter Pipeline
 
-1. Read `sync_state.yaml` for per-source last-processed timestamps.
-2. For each source, compute a two-layer cutoff:
-   - **Coarse:** Gmail `after:YYYY/MM/DD` query (day-granular)
-   - **Precise:** client-side `internalDate` filter (millisecond precision) — skips emails already processed from the same calendar day
-   - New sources with no sync entry use `now - default_lookback_days` (default: 7 days)
-3. For each new email: extract text → send to Claude → create note in `01 Notes/` → apply "Newsletters" Gmail label → update `sync_state.yaml`
-
-**Batch mode** collects all items first, submits one API call, then either polls inline or saves to `batch_state.yaml` and exits. `resume-batch` finalizes any pending batches.
+1. Reads per-source timestamps from `sync_state.yaml` to know where it left off.
+2. For each source, queries Gmail with a date filter and then applies a precise client-side check to avoid re-processing.
+3. For each new email: extracts text (strips HTML boilerplate) → sends to Claude → creates a Markdown note in `01 Notes/` → labels the email in Gmail → updates the sync timestamp.
+4. New sources with no history automatically look back `default_lookback_days` (default: 7).
 
 ### Inbox Pipeline
 
-1. Scans `00 Inbox/` for items with `status: inbox` or missing frontmatter.
-2. Sends each to Claude; if tags are returned, moves to `01 Notes/`; if not, leaves for manual review.
-3. PDFs: copied to `04 Assets/`, wrapper note created, original deleted.
+1. Scans `00 Inbox/` for notes with `status: inbox` or missing frontmatter.
+2. Sends content to Claude for classification.
+3. If tags are assigned, updates frontmatter and moves the note to `01 Notes/`. Otherwise, leaves it for manual review.
+4. PDFs are copied to `04 Assets/` with a wrapper note created in their place.
 
-## Batch Job Management
+### Batch Mode
 
-```bash
-second-brain resume-batch              # Poll all pending, finalize completed
-second-brain batch status              # List pending batches (from batch_state.yaml)
-second-brain batch status --refresh    # Same, with live API status
-second-brain batch cancel <batch_id>   # Cancel and remove a batch
-```
+Both pipelines can run in batch mode (`--batch`), which collects all items first and submits them to Anthropic's Messages Batches API in a single call. This is 50% cheaper than synchronous mode.
 
-## Sync State
-
-`sync_state.yaml` tracks the last processed email per source. Adding a new newsletter source to `newsletters.yaml` requires no manual changes — its entry is created automatically on first run.
-
-To force a re-process window, edit the timestamp for a source:
-```yaml
-last_sync:
-  "Benedict Evans": "2026-03-01T00:00:00Z"  # reprocess from this date forward
-```
+With `--no-wait`, the tool submits the batch and exits immediately. Run `resume-batch` later to poll for results and finalize. Batch state is persisted to `batch_state.yaml`, so it survives process restarts.
 
 ## Cost
 
-Using **Haiku** (default): ~$0.01–0.03 per newsletter item in sync mode. With `--batch`: ~50% reduction.
-
-Prompt caching is enabled by default and reduces system-prompt token cost by ~90% from the second call onward within a run.
+Using Claude Haiku (default): roughly **$0.01–0.03 per item** in synchronous mode. Batch mode reduces this by ~50%. Prompt caching (enabled by default) further reduces system-prompt token cost by ~90% from the second call onward.
 
 ## Troubleshooting
 
-**`insufficientPermissions` on Gmail**
-The token was issued with `gmail.readonly`. Delete it and re-authenticate:
-```bash
-rm ~/.config/second-brain/gmail_token.json
-second-brain newsletters --dry-run   # triggers OAuth browser flow
-```
-
-**"Your credit balance is too low"**
-Add credits at [console.anthropic.com/settings/billing](https://console.anthropic.com/settings/billing).
-
-**"Gmail API error" / missing credentials**
-Ensure `~/.config/second-brain/gmail_credentials.json` exists (download OAuth client credentials from Google Cloud Console).
-
-**New newsletter source not finding emails**
-Check that the source has no `last_sync` entry in `sync_state.yaml` — if one exists with a recent timestamp it will be used as the cutoff. Remove the entry to fall back to `default_lookback_days`.
+| Problem | Solution |
+|---------|----------|
+| `insufficientPermissions` on Gmail | Your token was issued with read-only scope. Delete `~/.config/second-brain/gmail_token.json` and re-run to trigger OAuth again. |
+| "Your credit balance is too low" | Add credits at [console.anthropic.com](https://console.anthropic.com/settings/billing). |
+| Gmail API error / missing credentials | Ensure `~/.config/second-brain/gmail_credentials.json` exists. Download OAuth client credentials from your Google Cloud Console. |
+| New newsletter source not finding emails | Check `sync_state.yaml` — if the source has an entry with a recent timestamp, that's being used as the cutoff. Remove the entry to fall back to `default_lookback_days`. |
 
 ## Development
 
 ```bash
-pytest                                          # All tests
-pytest --cov=src/second_brain tests/            # With coverage
-pytest tests/test_pipeline_newsletter.py -v     # Specific file
+pip install -e ".[dev]"
+pytest                                       # Run all tests
+pytest --cov=src/second_brain tests/         # With coverage report
+pytest tests/test_pipeline_newsletter.py -v  # Specific test file
 ```
 
-109 tests, all using mocks for external APIs and temp directories for file operations.
+All tests use mocks for external APIs (Gmail, Claude) and temporary directories for vault operations — no real API calls or file system side effects.
 
 ## Architecture
 
-The code is structured around a sync pipeline (`pipeline/newsletter.py`, `pipeline/inbox.py`), a provider-agnostic LLM layer (`llm/`), and a vault abstraction (`vault/`). Start with `src/second_brain/main.py` for the CLI entry point.
+The codebase is organized around three layers:
+
+- **Pipelines** (`pipeline/`) — orchestrate the newsletter and inbox workflows
+- **LLM** (`llm/`) — provider-agnostic abstraction for both synchronous and batch classification; currently backed by Claude
+- **Vault** (`vault/`) — read/write/move notes via a backend protocol (filesystem or Obsidian CLI)
+
+Entry point: `src/second_brain/main.py`
+
+## License
+
+MIT
