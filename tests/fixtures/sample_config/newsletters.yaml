@@ -1,0 +1,5 @@
+sources:
+  - email: "testauthor@example.com"
+    name: "Test AI Weekly"
+  - email: "data-digest@example.com"
+    name: "Test Data Digest"

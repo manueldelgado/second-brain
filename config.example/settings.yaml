@@ -1,0 +1,27 @@
+vault:
+  root: "~/Documents/MyVault"           # Path to your Obsidian vault
+  inbox_folder: "00 Inbox"
+  notes_folder: "01 Notes"
+  assets_folder: "04 Assets"
+  sync_state_file: "sync_state.yaml"   # Relative to project root
+  batch_state_file: "batch_state.yaml" # Relative to project root
+
+vault_backend: "filesystem"            # "filesystem" (default) or "obsidian_cli"
+
+llm:
+  provider: "claude"
+  model: "claude-haiku-4-5-20251001"   # See console.anthropic.com for available models
+  max_tokens: 2048
+  batch:
+    poll_interval_seconds: 30          # How often to check batch status when waiting inline
+    timeout_hours: 24                  # Give up polling after this many hours
+
+gmail:
+  credentials_file: "~/.config/second-brain/gmail_credentials.json"
+  token_file: "~/.config/second-brain/gmail_token.json"
+  scopes:
+    - "https://www.googleapis.com/auth/gmail.modify"  # Required for labelling
+
+processing:
+  default_lookback_days: 7    # How far back to fetch for new/unknown newsletter sources
+  dry_run: false

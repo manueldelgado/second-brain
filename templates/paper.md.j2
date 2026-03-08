@@ -1,0 +1,33 @@
+{{ frontmatter }}
+
+## Summary
+
+> [!abstract] AI-Generated Summary (EN)
+> {{ summary }}
+
+## Key Contributions
+
+{% for takeaway in key_takeaways -%}
+- {{ takeaway }}
+{% endfor %}
+
+## Methodology
+
+
+
+## Key Findings
+
+
+
+{% if pdf_filename -%}
+## Embedded PDF
+
+![[{{ pdf_filename }}]]
+
+{% endif -%}
+## My Notes
+
+
+
+## Related
+

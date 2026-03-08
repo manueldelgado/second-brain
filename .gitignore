@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+
+# Runtime state (generated on first run, private)
+sync_state.yaml
+batch_state.yaml
+
+# Project-specific Claude Code instructions and personal docs (private)
+CLAUDE.md
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/

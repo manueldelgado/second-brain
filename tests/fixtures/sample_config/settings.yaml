@@ -1,0 +1,24 @@
+vault:
+  root: "/tmp/test_vault"
+  inbox_folder: "00 Inbox"
+  notes_folder: "01 Notes"
+  assets_folder: "04 Assets"
+  sync_state_file: "sync_state.yaml"
+
+vault_backend: "filesystem"
+
+llm:
+  provider: "claude"
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 2048
+
+gmail:
+  credentials_file: "/tmp/test_vault/.config/gmail_credentials.json"
+  token_file: "/tmp/test_vault/.config/gmail_token.json"
+  scopes:
+    - "https://www.googleapis.com/auth/gmail.readonly"
+
+processing:
+  default_lookback_days: 3
+  batch_size: 5
+  dry_run: true

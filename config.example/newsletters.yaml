@@ -1,0 +1,13 @@
+# Newsletter sources — add one entry per newsletter you want to ingest.
+#
+# email: the sender address Gmail should search for (from: filter)
+# name:  human-readable name used in note frontmatter and sync state
+#
+# New sources are picked up automatically on the next run; no changes to
+# sync_state.yaml are required.
+
+sources:
+  - email: "author@example.com"
+    name: "Example Newsletter"
+  - email: "weekly@another-newsletter.com"
+    name: "Another Newsletter"

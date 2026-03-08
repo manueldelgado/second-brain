@@ -1,0 +1,33 @@
+# Taxonomy — defines the tags the LLM can assign to notes.
+#
+# descriptive: what the content is ABOUT (use 1-3 per note)
+# functional:  what you can USE the content FOR (use 0-2 per note)
+#
+# Tags use Obsidian's hierarchical format with "/" as separator.
+# The LLM is instructed to pick only from this list, so be specific.
+# classification_rules guide the LLM's tagging behaviour.
+#
+# This is a minimal illustrative example. Replace it entirely with
+# your own vocabulary — the program imposes no structure on tag names.
+
+descriptive:
+  tech/ai: "Artificial intelligence, machine learning, LLMs"
+  tech/software: "Software development, tools, frameworks"
+  tech/industry: "Tech industry news, companies, products"
+  business/strategy: "Business strategy, competitive analysis"
+  business/startups: "Startups, venture capital, entrepreneurship"
+  science/research: "Academic research, papers, studies"
+  society/policy: "Regulation, policy, law"
+  society/culture: "Culture, media, society"
+
+functional:
+  func/teaching: "Useful as teaching material or case study"
+  func/blog: "Potential input for blog posts or articles"
+  func/research: "Relevant to ongoing research"
+  func/trend-monitoring: "Useful for staying current in a field"
+  func/book: "Item is a book"
+
+classification_rules:
+  - "Use 1-3 descriptive tags and 0-2 functional tags per note"
+  - "Be specific: prefer tech/ai over a broader tag if the content is primarily about AI"
+  - "When in doubt, use fewer tags rather than misclassify"

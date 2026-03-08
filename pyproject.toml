@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "second-brain"
+version = "0.1.0"
+description = "Obsidian Second Brain automation — newsletter ingestion and inbox processing"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40",
+    "google-api-python-client>=2.0",
+    "google-auth-oauthlib>=1.0",
+    "google-auth-httplib2>=0.2",
+    "python-frontmatter>=1.0",
+    "markdownify>=0.14",
+    "trafilatura>=1.6",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "click>=8.0",
+    "jinja2>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "responses",
+    "freezegun",
+]
+
+[project.scripts]
+second-brain = "second_brain.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/second_brain"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,16 @@
+descriptive:
+  ai/industry-news: "Funding, M&A, product launches, daily AI news"
+  ai/strategy: "Platform plays, moats, OpenAI vs Google vs Anthropic"
+  ai/capabilities-models: "New models, benchmarks, reasoning, agents"
+  data/tools: "Python, SQL, ML libraries, frameworks, tutorials"
+  marketing/clv-modeling: "BG/NBD, Pareto/NBD, estimation, validation"
+
+functional:
+  func/teaching: "Usable in IE courses, business school lectures"
+  func/trend-monitoring: "Staying current on AI/tech/data developments"
+  func/tool-discovery: "New software, libraries, techniques, how-tos"
+
+classification_rules:
+  - "Be specific with tags: prefer ai/capabilities-models over just ai/"
+  - "Use 1-3 descriptive tags and 0-2 functional tags per note"
+  - "When in doubt, use fewer tags rather than misclassify"
