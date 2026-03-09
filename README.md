@@ -2,6 +2,8 @@
 
 Automate your [Obsidian](https://obsidian.md) knowledge management workflow. This CLI tool ingests newsletters from Gmail, summarizes and classifies them with Claude, and keeps your vault organized — so you can focus on reading and thinking instead of filing.
 
+![Obsidian Second Brain Automation — Workflows and prerequisites](second-brain-diagram-en.svg)
+
 ## What It Does
 
 **Newsletter ingestion** — Connects to Gmail, fetches emails from your newsletter subscriptions, extracts the content, sends it to Claude for summarization and tagging, and creates structured notes in your vault. Processed emails are labelled in Gmail so nothing gets re-processed.

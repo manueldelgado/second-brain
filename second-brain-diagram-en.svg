@@ -1,0 +1,257 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 940" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <!-- MDT Academic Colors -->
+    <!-- Navy: #141F52, Dark: #111B2E, Red: #E3120B, Soft Red: #F6423C, Ice: #D6E4F0, BG: #F5F7FA -->
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#111B2E" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowNavy" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#141F52"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#E3120B"/>
+    </marker>
+    <marker id="arrowSoftRed" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#F6423C"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="940" fill="#F5F7FA" rx="0"/>
+
+  <!-- Title -->
+  <text x="600" y="48" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="bold" fill="#141F52">Obsidian Second Brain Automation</text>
+  <text x="600" y="72" text-anchor="middle" font-size="13" fill="#F6423C" letter-spacing="0.5">Workflows and prerequisites</text>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- PRE-REQUISITOS (top bar) -->
+  <!-- ═══════════════════════════════════════════ -->
+  <rect x="40" y="94" width="1120" height="68" rx="6" fill="#111B2E" filter="url(#shadow)"/>
+  <text x="600" y="118" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="14" font-weight="bold" fill="#D6E4F0" letter-spacing="1">PREREQUISITES</text>
+
+  <!-- Prereq items -->
+  <g font-size="11.5" fill="#F5F7FA">
+    <rect x="62" y="128" width="160" height="24" rx="4" fill="#141F52"/>
+    <text x="142" y="144" text-anchor="middle" font-size="11">Python 3.12+</text>
+
+    <rect x="240" y="128" width="200" height="24" rx="4" fill="#141F52"/>
+    <text x="340" y="144" text-anchor="middle" font-size="11">Anthropic API Key (Claude)</text>
+
+    <rect x="458" y="128" width="240" height="24" rx="4" fill="#141F52"/>
+    <text x="578" y="144" text-anchor="middle" font-size="11">Google Cloud + Gmail API OAuth</text>
+
+    <rect x="716" y="128" width="220" height="24" rx="4" fill="#141F52"/>
+    <text x="826" y="144" text-anchor="middle" font-size="11">Obsidian Vault (or Markdown folder)</text>
+
+    <rect x="954" y="128" width="184" height="24" rx="4" fill="#141F52"/>
+    <text x="1046" y="144" text-anchor="middle" font-size="11">Personal taxonomy.yaml</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- CONFIGURACIÓN INICIAL (setup row) -->
+  <!-- ═══════════════════════════════════════════ -->
+  <text x="600" y="200" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="15" font-weight="bold" fill="#141F52">Initial setup</text>
+
+  <!-- Step boxes -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="214" width="200" height="52" rx="6" fill="white" stroke="#D6E4F0" stroke-width="1.5"/>
+    <text x="160" y="237" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">1. Install</text>
+    <text x="160" y="254" text-anchor="middle" font-size="10.5" fill="#111B2E">git clone → pip install -e .</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="290" y="214" width="200" height="52" rx="6" fill="white" stroke="#D6E4F0" stroke-width="1.5"/>
+    <text x="390" y="237" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">2. Configure</text>
+    <text x="390" y="254" text-anchor="middle" font-size="10.5" fill="#111B2E">settings / newsletters / taxonomy</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="520" y="214" width="200" height="52" rx="6" fill="white" stroke="#D6E4F0" stroke-width="1.5"/>
+    <text x="620" y="237" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">3. API Keys</text>
+    <text x="620" y="254" text-anchor="middle" font-size="10.5" fill="#111B2E">.env + Gmail OAuth</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="750" y="214" width="200" height="52" rx="6" fill="white" stroke="#D6E4F0" stroke-width="1.5"/>
+    <text x="850" y="237" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">4. Scaffold Vault</text>
+    <text x="850" y="254" text-anchor="middle" font-size="10.5" fill="#111B2E">config check → vault init</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="980" y="214" width="180" height="52" rx="6" fill="white" stroke="#D6E4F0" stroke-width="1.5"/>
+    <text x="1070" y="237" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">5. Test</text>
+    <text x="1070" y="254" text-anchor="middle" font-size="10.5" fill="#111B2E">--dry-run -v</text>
+  </g>
+
+  <!-- Arrows between setup steps -->
+  <line x1="260" y1="240" x2="288" y2="240" stroke="#141F52" stroke-width="1.5" marker-end="url(#arrowNavy)"/>
+  <line x1="490" y1="240" x2="518" y2="240" stroke="#141F52" stroke-width="1.5" marker-end="url(#arrowNavy)"/>
+  <line x1="720" y1="240" x2="748" y2="240" stroke="#141F52" stroke-width="1.5" marker-end="url(#arrowNavy)"/>
+  <line x1="950" y1="240" x2="978" y2="240" stroke="#141F52" stroke-width="1.5" marker-end="url(#arrowNavy)"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- DIVIDER -->
+  <!-- ═══════════════════════════════════════════ -->
+  <line x1="60" y1="290" x2="1140" y2="290" stroke="#D6E4F0" stroke-width="1" stroke-dasharray="6,4"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- PIPELINE A: Newsletter Ingestion -->
+  <!-- ═══════════════════════════════════════════ -->
+  <text x="360" y="322" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="16" font-weight="bold" fill="#E3120B">Pipeline A: Newsletter Ingestion</text>
+  <text x="360" y="340" text-anchor="middle" font-size="11" fill="#111B2E">second-brain newsletters [--batch] [--no-wait]</text>
+
+  <!-- Gmail box -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="358" width="160" height="72" rx="8" fill="#141F52"/>
+    <text x="140" y="384" text-anchor="middle" font-size="13" font-weight="bold" fill="white">Gmail</text>
+    <text x="140" y="402" text-anchor="middle" font-size="10" fill="#D6E4F0">Subscriptions</text>
+    <text x="140" y="416" text-anchor="middle" font-size="10" fill="#D6E4F0">newsletters.yaml</text>
+  </g>
+
+  <!-- Fetch + Dedup -->
+  <g filter="url(#shadow)">
+    <rect x="260" y="358" width="170" height="72" rx="8" fill="white" stroke="#141F52" stroke-width="1.5"/>
+    <text x="345" y="384" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">Fetch + Dedup</text>
+    <text x="345" y="400" text-anchor="middle" font-size="10" fill="#111B2E">Date filter (coarse)</text>
+    <text x="345" y="414" text-anchor="middle" font-size="10" fill="#111B2E">+ ms check (precise)</text>
+  </g>
+
+  <!-- Content extraction -->
+  <g filter="url(#shadow)">
+    <rect x="470" y="358" width="170" height="72" rx="8" fill="white" stroke="#141F52" stroke-width="1.5"/>
+    <text x="555" y="384" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">Extraction</text>
+    <text x="555" y="400" text-anchor="middle" font-size="10" fill="#111B2E">HTML cleanup</text>
+    <text x="555" y="414" text-anchor="middle" font-size="10" fill="#111B2E">Strips ads, nav, boilerplate</text>
+  </g>
+
+  <!-- Arrow Gmail → Fetch -->
+  <line x1="220" y1="394" x2="258" y2="394" stroke="#141F52" stroke-width="2" marker-end="url(#arrowNavy)"/>
+  <!-- Arrow Fetch → Extract -->
+  <line x1="430" y1="394" x2="468" y2="394" stroke="#141F52" stroke-width="2" marker-end="url(#arrowNavy)"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- CENTRAL: Claude AI (shared) -->
+  <!-- ═══════════════════════════════════════════ -->
+  <g filter="url(#shadow)">
+    <rect x="440" y="470" width="320" height="100" rx="10" fill="#E3120B"/>
+    <text x="600" y="500" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="17" font-weight="bold" fill="white">Claude (Anthropic API)</text>
+    <text x="600" y="520" text-anchor="middle" font-size="11" fill="#F5F7FA">Summary + Classification via taxonomy.yaml</text>
+    <text x="600" y="537" text-anchor="middle" font-size="10" fill="#F5F7FA">Prompt caching · Batch API (−50% cost)</text>
+    <text x="600" y="554" text-anchor="middle" font-size="10" fill="#F5F7FA">Synchronous or fire-and-forget + resume-batch</text>
+  </g>
+
+  <!-- Arrow Extract → Claude -->
+  <line x1="555" y1="430" x2="555" y2="468" stroke="#E3120B" stroke-width="2" marker-end="url(#arrowRed)"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- PIPELINE B: Inbox Classification -->
+  <!-- ═══════════════════════════════════════════ -->
+  <text x="920" y="322" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="16" font-weight="bold" fill="#F6423C">Pipeline B: Inbox Classification</text>
+  <text x="920" y="340" text-anchor="middle" font-size="11" fill="#111B2E">second-brain inbox [--batch]</text>
+
+  <!-- Inbox folder -->
+  <g filter="url(#shadow)">
+    <rect x="830" y="358" width="180" height="72" rx="8" fill="#141F52"/>
+    <text x="920" y="384" text-anchor="middle" font-size="13" font-weight="bold" fill="white">00 Inbox/</text>
+    <text x="920" y="402" text-anchor="middle" font-size="10" fill="#D6E4F0">Clippings, PDFs, notes</text>
+    <text x="920" y="416" text-anchor="middle" font-size="10" fill="#D6E4F0">unclassified</text>
+  </g>
+
+  <!-- Arrow Inbox → Claude -->
+  <line x1="920" y1="430" x2="920" y2="488" stroke="#F6423C" stroke-width="2"/>
+  <line x1="920" y1="488" x2="762" y2="488" stroke="#F6423C" stroke-width="2" marker-end="url(#arrowSoftRed)"/>
+
+  <!-- Label Gmail -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="480" width="160" height="48" rx="6" fill="#D6E4F0"/>
+    <text x="140" y="500" text-anchor="middle" font-size="11" font-weight="bold" fill="#141F52">Gmail: label</text>
+    <text x="140" y="516" text-anchor="middle" font-size="10" fill="#111B2E">"Processed" (skip on re-run)</text>
+  </g>
+  <!-- Arrow from Gmail area back -->
+  <line x1="140" y1="430" x2="140" y2="478" stroke="#141F52" stroke-width="1.5" marker-end="url(#arrowNavy)" stroke-dasharray="5,3"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- OUTPUT: Obsidian Vault -->
+  <!-- ═══════════════════════════════════════════ -->
+  <g filter="url(#shadow)">
+    <rect x="380" y="610" width="440" height="165" rx="10" fill="white" stroke="#141F52" stroke-width="2"/>
+    <rect x="380" y="610" width="440" height="36" rx="10" fill="#141F52"/>
+    <rect x="380" y="630" width="440" height="16" fill="#141F52"/>
+    <text x="600" y="634" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="15" font-weight="bold" fill="white">Obsidian Vault</text>
+  </g>
+
+  <!-- Vault structure -->
+  <g font-size="11" fill="#111B2E">
+    <text x="420" y="668" font-weight="bold" fill="#141F52">01 Notes/</text>
+    <text x="530" y="668">Classified notes (final destination)</text>
+
+    <text x="420" y="688" font-weight="bold" fill="#141F52">02 MOCs/</text>
+    <text x="530" y="688">Maps of Content (manual curation)</text>
+
+    <text x="420" y="708" font-weight="bold" fill="#141F52">03 Bases/</text>
+    <text x="530" y="708">Database views (Obsidian Bases plugin)</text>
+
+    <text x="420" y="728" font-weight="bold" fill="#141F52">04 Assets/</text>
+    <text x="530" y="728">PDFs, images, attachments</text>
+
+    <text x="420" y="748" font-weight="bold" fill="#141F52">05 Templates/</text>
+    <text x="530" y="748">Newsletter, Web Clipping, Paper, Book</text>
+  </g>
+
+  <!-- Frontmatter detail -->
+  <g filter="url(#shadow)">
+    <rect x="830" y="620" width="300" height="92" rx="6" fill="#D6E4F0"/>
+    <text x="980" y="644" text-anchor="middle" font-size="12" font-weight="bold" fill="#141F52">Each generated note includes:</text>
+    <text x="855" y="664" font-size="10.5" fill="#111B2E">YAML frontmatter (title, source, author, tags)</text>
+    <text x="855" y="680" font-size="10.5" fill="#111B2E">AI-generated summary</text>
+    <text x="855" y="696" font-size="10.5" fill="#111B2E">Key takeaways + original content</text>
+  </g>
+
+  <!-- Arrow Claude → Vault -->
+  <line x1="600" y1="570" x2="600" y2="608" stroke="#E3120B" stroke-width="2.5" marker-end="url(#arrowRed)"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- FEATURES SIDEBAR -->
+  <!-- ═══════════════════════════════════════════ -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="570" width="280" height="150" rx="8" fill="white" stroke="#D6E4F0" stroke-width="1.5"/>
+    <rect x="60" y="570" width="280" height="30" rx="8" fill="#F6423C"/>
+    <rect x="60" y="586" width="280" height="14" fill="#F6423C"/>
+    <text x="200" y="591" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="12" font-weight="bold" fill="white">Key capabilities</text>
+  </g>
+  <g font-size="10.5" fill="#111B2E">
+    <text x="82" y="618">Dry-run mode (preview without writing)</text>
+    <text x="82" y="636">Error isolation (one failure never stops the batch)</text>
+    <text x="82" y="654">Shared-sender support (same address,</text>
+    <text x="82" y="668">  different newsletters by display name)</text>
+    <text x="82" y="686">Anthropic Batch API (−50% cost)</text>
+    <text x="82" y="704">Prompt caching (~90% system prompt savings)</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- EXECUTION MODES -->
+  <!-- ═══════════════════════════════════════════ -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="800" width="1070" height="72" rx="6" fill="white" stroke="#141F52" stroke-width="1.5"/>
+    <text x="600" y="822" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="13" font-weight="bold" fill="#141F52">Execution modes</text>
+    <g font-size="11" fill="#111B2E">
+      <rect x="82" y="830" width="10" height="10" rx="2" fill="#141F52"/>
+      <text x="100" y="840">second-brain run (synchronous)</text>
+
+      <rect x="302" y="830" width="10" height="10" rx="2" fill="#E3120B"/>
+      <text x="320" y="840">second-brain run --batch (batch, −50%)</text>
+
+      <rect x="582" y="830" width="10" height="10" rx="2" fill="#F6423C"/>
+      <text x="600" y="840">--batch --no-wait + resume-batch (fire-and-forget)</text>
+
+      <rect x="912" y="830" width="10" height="10" rx="2" fill="#D6E4F0"/>
+      <text x="930" y="840">--dry-run (preview only)</text>
+    </g>
+    <text x="600" y="860" text-anchor="middle" font-size="10" fill="#111B2E">Easily automated via <tspan font-style="italic">cron</tspan> or <tspan font-style="italic">launchd</tspan></text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- FOOTER -->
+  <!-- ═══════════════════════════════════════════ -->
+  <text x="600" y="910" text-anchor="middle" font-size="10" fill="#141F52" opacity="0.5">github.com/manueldelgado/second-brain</text>
+
+  <!-- combined run arrow label -->
+  <text x="720" y="462" text-anchor="middle" font-size="10" fill="#E3120B" font-style="italic">second-brain run = A + B</text>
+
+</svg>
