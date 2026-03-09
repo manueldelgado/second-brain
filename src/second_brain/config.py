@@ -62,6 +62,7 @@ class ProcessingConfig(BaseModel):
 class NewsletterSource(BaseModel):
     email: str
     name: str
+    sender_name: str | None = None
 
 
 class NewslettersConfig(BaseModel):

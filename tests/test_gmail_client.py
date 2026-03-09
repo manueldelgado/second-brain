@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from second_brain.gmail.client import GmailClient
+from second_brain.gmail.client import GmailClient, _extract_display_name
 
 
 @pytest.fixture
@@ -166,6 +166,24 @@ class TestMessageToIngestItem:
         assert item.published is not None
 
 
+class TestExtractDisplayName:
+    def test_with_angle_brackets(self) -> None:
+        msg = {"payload": {"headers": [{"name": "From", "value": "Alice Blog <noreply@wp.com>"}]}}
+        assert _extract_display_name(msg) == "Alice Blog"
+
+    def test_with_quoted_name(self) -> None:
+        msg = {"payload": {"headers": [{"name": "From", "value": '"Alice Blog" <noreply@wp.com>'}]}}
+        assert _extract_display_name(msg) == "Alice Blog"
+
+    def test_bare_email(self) -> None:
+        msg = {"payload": {"headers": [{"name": "From", "value": "noreply@wp.com"}]}}
+        assert _extract_display_name(msg) == "noreply@wp.com"
+
+    def test_missing_from_header(self) -> None:
+        msg = {"payload": {"headers": [{"name": "Subject", "value": "test"}]}}
+        assert _extract_display_name(msg) == ""
+
+
 class TestSearchEmails:
     def test_search_constructs_correct_query(self, gmail_client: GmailClient) -> None:
         from datetime import date
@@ -182,3 +200,105 @@ class TestSearchEmails:
         assert call_kwargs["userId"] == "me"
         assert "from:ben@ben-evans.com" in call_kwargs["q"]
         assert "after:2026/03/01" in call_kwargs["q"]
+
+    def test_search_with_sender_name_uses_display_name(self, gmail_client: GmailClient) -> None:
+        from datetime import date
+
+        mock_service = MagicMock()
+        mock_list = mock_service.users().messages().list
+        mock_list.return_value.execute.return_value = {"messages": []}
+        gmail_client._service = mock_service
+
+        gmail_client.search_emails("noreply@wp.com", date(2026, 3, 1), sender_name="Alice Blog")
+
+        call_kwargs = mock_list.call_args[1]
+        assert 'from:"Alice Blog"' in call_kwargs["q"]
+        assert "noreply@wp.com" not in call_kwargs["q"]
+
+
+class TestFetchNewslettersFiltering:
+    """Tests for sender_name client-side filtering in fetch_newsletters."""
+
+    def _make_msg(self, msg_id: str, from_header: str, internal_date: str = "1741363200000") -> dict:
+        return {
+            "id": msg_id,
+            "threadId": "t1",
+            "internalDate": internal_date,
+            "payload": {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "Subject", "value": f"Subject {msg_id}"},
+                    {"name": "From", "value": from_header},
+                ],
+                "body": {"data": _encode_body("content")},
+            },
+        }
+
+    def test_no_sender_name_returns_all(self, gmail_client: GmailClient) -> None:
+        from datetime import date
+
+        msg_a = self._make_msg("m1", "Alice Blog <noreply@wp.com>")
+        msg_b = self._make_msg("m2", "Bob Digest <noreply@wp.com>")
+
+        mock_service = MagicMock()
+        mock_list = mock_service.users().messages().list
+        mock_list.return_value.execute.return_value = {"messages": [{"id": "m1"}, {"id": "m2"}]}
+        mock_get = mock_service.users().messages().get
+        mock_get.return_value.execute.side_effect = [msg_a, msg_b]
+        gmail_client._service = mock_service
+
+        items = gmail_client.fetch_newsletters("noreply@wp.com", "Test", date(2026, 3, 1))
+        assert len(items) == 2
+
+    def test_sender_name_filters_non_matching(self, gmail_client: GmailClient) -> None:
+        from datetime import date
+
+        msg_a = self._make_msg("m1", "Alice Blog <noreply@wp.com>")
+        msg_b = self._make_msg("m2", "Bob Digest <noreply@wp.com>")
+
+        mock_service = MagicMock()
+        mock_list = mock_service.users().messages().list
+        mock_list.return_value.execute.return_value = {"messages": [{"id": "m1"}, {"id": "m2"}]}
+        mock_get = mock_service.users().messages().get
+        mock_get.return_value.execute.side_effect = [msg_a, msg_b]
+        gmail_client._service = mock_service
+
+        items = gmail_client.fetch_newsletters(
+            "noreply@wp.com", "Alice Blog", date(2026, 3, 1), sender_name="Alice Blog",
+        )
+        assert len(items) == 1
+        assert items[0].title == "Subject m1"
+
+    def test_sender_name_case_insensitive(self, gmail_client: GmailClient) -> None:
+        from datetime import date
+
+        msg = self._make_msg("m1", "alice blog <noreply@wp.com>")
+
+        mock_service = MagicMock()
+        mock_list = mock_service.users().messages().list
+        mock_list.return_value.execute.return_value = {"messages": [{"id": "m1"}]}
+        mock_get = mock_service.users().messages().get
+        mock_get.return_value.execute.return_value = msg
+        gmail_client._service = mock_service
+
+        items = gmail_client.fetch_newsletters(
+            "noreply@wp.com", "Alice Blog", date(2026, 3, 1), sender_name="Alice Blog",
+        )
+        assert len(items) == 1
+
+    def test_sender_name_bare_email_filtered_out(self, gmail_client: GmailClient) -> None:
+        from datetime import date
+
+        msg = self._make_msg("m1", "noreply@wp.com")
+
+        mock_service = MagicMock()
+        mock_list = mock_service.users().messages().list
+        mock_list.return_value.execute.return_value = {"messages": [{"id": "m1"}]}
+        mock_get = mock_service.users().messages().get
+        mock_get.return_value.execute.return_value = msg
+        gmail_client._service = mock_service
+
+        items = gmail_client.fetch_newsletters(
+            "noreply@wp.com", "Test", date(2026, 3, 1), sender_name="Alice Blog",
+        )
+        assert len(items) == 0

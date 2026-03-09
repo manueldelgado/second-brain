@@ -99,7 +99,10 @@ def _run_sync(
         logger.info("Fetching %s (after %s)", source.name, after_date)
 
         try:
-            items = gmail.fetch_newsletters(source.email, source.name, after_date, min_internal_date)
+            items = gmail.fetch_newsletters(
+                source.email, source.name, after_date, min_internal_date,
+                sender_name=source.sender_name,
+            )
         except Exception as e:
             report.errors.append(f"Gmail fetch failed for {source.name}: {e}")
             continue
@@ -162,7 +165,10 @@ def _run_batch(
         after_date, min_internal_date = _compute_after_date(sync_state, source.name, settings)
         logger.info("Fetching %s (after %s)", source.name, after_date)
         try:
-            items = gmail.fetch_newsletters(source.email, source.name, after_date, min_internal_date)
+            items = gmail.fetch_newsletters(
+                source.email, source.name, after_date, min_internal_date,
+                sender_name=source.sender_name,
+            )
         except Exception as e:
             report.errors.append(f"Gmail fetch failed for {source.name}: {e}")
             continue

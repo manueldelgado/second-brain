@@ -189,6 +189,14 @@ class TestLoadNewsletters:
         assert ns.email == "test@example.com"
         assert ns.name == "Test NL"
 
+    def test_newsletter_source_sender_name_default(self) -> None:
+        ns = NewsletterSource(email="a@b.com", name="Test")
+        assert ns.sender_name is None
+
+    def test_newsletter_source_with_sender_name(self) -> None:
+        ns = NewsletterSource(email="noreply@wp.com", name="My NL", sender_name="My Newsletter")
+        assert ns.sender_name == "My Newsletter"
+
     def test_empty_sources_list(self, tmp_path: Path) -> None:
         _write_yaml(tmp_path / "newsletters.yaml", {"sources": []})
         cfg = load_newsletters(tmp_path)

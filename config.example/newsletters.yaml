@@ -1,7 +1,11 @@
 # Newsletter sources — add one entry per newsletter you want to ingest.
 #
-# email: the sender address Gmail should search for (from: filter)
-# name:  human-readable name used in note frontmatter and sync state
+# email:       the sender address Gmail should search for (from: filter)
+# name:        human-readable name used in note frontmatter and sync state
+# sender_name: (optional) display name to match in the From header — use this
+#              when multiple newsletters share the same sender email address
+#              (e.g. donotreply@wordpress.com). Matching is case-insensitive
+#              substring: the email's From display name must contain this value.
 #
 # New sources are picked up automatically on the next run; no changes to
 # sync_state.yaml are required.
@@ -11,3 +15,11 @@ sources:
     name: "Example Newsletter"
   - email: "weekly@another-newsletter.com"
     name: "Another Newsletter"
+  # When multiple newsletters share the same sender email, use sender_name
+  # to distinguish them by the display name in the From header:
+  # - email: "donotreply@wordpress.com"
+  #   name: "Tech Insights"
+  #   sender_name: "Tech Insights Blog"
+  # - email: "donotreply@wordpress.com"
+  #   name: "Data Weekly"
+  #   sender_name: "Data Weekly Digest"

@@ -41,7 +41,7 @@ class MockGmail:
     def __init__(self, items_by_source: dict[str, list[IngestItem]] | None = None) -> None:
         self.items_by_source = items_by_source or {}
 
-    def fetch_newsletters(self, sender_email, newsletter_name, after_date, min_internal_date=None):
+    def fetch_newsletters(self, sender_email, newsletter_name, after_date, min_internal_date=None, sender_name=None):
         return self.items_by_source.get(newsletter_name, [])
 
     def get_or_create_label(self, name):

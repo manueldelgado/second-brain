@@ -15,6 +15,19 @@ from second_brain.models import IngestItem
 logger = logging.getLogger(__name__)
 
 
+def _extract_display_name(msg: dict) -> str:
+    """Extract the display name from a Gmail message's From header.
+
+    Returns the portion before ``<email>`` (stripped of quotes), or the
+    full header value when no angle-bracket format is found.
+    """
+    headers = {h["name"].lower(): h["value"] for h in msg["payload"]["headers"]}
+    from_header = headers.get("from", "")
+    if "<" in from_header:
+        return from_header.split("<")[0].strip().strip('"')
+    return from_header
+
+
 class GmailClient:
     """Gmail API wrapper for fetching newsletter emails."""
 
@@ -92,17 +105,27 @@ class GmailClient:
             body={"addLabelIds": [label_id]},
         ).execute()
 
-    def search_emails(self, sender: str, after_date: date | datetime) -> list[dict]:
+    def search_emails(
+        self,
+        sender: str,
+        after_date: date | datetime,
+        sender_name: str | None = None,
+    ) -> list[dict]:
         """Search for emails from a sender after the given date/datetime.
 
         If a datetime is provided, it will be converted to a date for the query.
         Gmail's 'after:' filter matches emails after midnight on that date.
+
+        When *sender_name* is provided, the ``from:`` clause uses the display
+        name (quoted) instead of the email address, which lets Gmail do a
+        coarse server-side match on the human-readable sender name.
         """
         if isinstance(after_date, datetime):
             query_date = after_date.date()
         else:
             query_date = after_date
-        query = f"from:{sender} after:{query_date.strftime('%Y/%m/%d')}"
+        from_value = f'"{sender_name}"' if sender_name else sender
+        query = f"from:{from_value} after:{query_date.strftime('%Y/%m/%d')}"
         logger.debug("Gmail query: %s", query)
 
         results = self.service.users().messages().list(
@@ -125,6 +148,7 @@ class GmailClient:
         newsletter_name: str,
         after_date: date | datetime,
         min_internal_date: datetime | None = None,
+        sender_name: str | None = None,
     ) -> list[IngestItem]:
         """Fetch all newsletter emails from a sender after the given date.
 
@@ -132,10 +156,12 @@ class GmailClient:
         *min_internal_date*, when provided, is a precise timestamp cutoff:
         any email whose ``internalDate`` is at or before it is skipped before
         content extraction, avoiding duplicate processing between runs.
+        *sender_name*, when provided, restricts results to emails whose From
+        header display name contains *sender_name* (case-insensitive).
 
         Returns IngestItems sorted oldest-first.
         """
-        messages = self.search_emails(sender_email, after_date)
+        messages = self.search_emails(sender_email, after_date, sender_name=sender_name)
         cutoff_ms = int(min_internal_date.timestamp() * 1000) if min_internal_date else None
         items: list[IngestItem] = []
 
@@ -145,6 +171,14 @@ class GmailClient:
                 if cutoff_ms is not None:
                     if int(msg.get("internalDate", 0)) <= cutoff_ms:
                         logger.debug("Skipping already-processed message %s", msg_ref["id"])
+                        continue
+                if sender_name is not None:
+                    display_name = _extract_display_name(msg)
+                    if sender_name.lower() not in display_name.lower():
+                        logger.debug(
+                            "Skipping message %s — display name '%s' doesn't match sender_name '%s'",
+                            msg_ref["id"], display_name, sender_name,
+                        )
                         continue
                 item = self._message_to_ingest_item(msg, newsletter_name)
                 items.append(item)
@@ -184,11 +218,7 @@ class GmailClient:
             content = ""
 
         # Extract author name from "From" header
-        author_name = newsletter_name
-        if "<" in from_header:
-            author_name = from_header.split("<")[0].strip().strip('"')
-        if not author_name:
-            author_name = newsletter_name
+        author_name = _extract_display_name(msg) or newsletter_name
 
         return IngestItem(
             source_type="gmail",

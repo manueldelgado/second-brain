@@ -28,6 +28,9 @@ batch_state.yaml
 CLAUDE.md
 docs/
 
+# Automation scripts (machine-specific paths)
+scripts/
+
 # OS
 .DS_Store
 Thumbs.db

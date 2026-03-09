@@ -16,6 +16,7 @@ Both pipelines support synchronous and batch execution modes, dry-run previews, 
 - **Batch mode** — Submit all items to Anthropic's Messages Batches API in one call (50% cost reduction); fire-and-forget with `--no-wait` and finalize later with `resume-batch`
 - **Prompt caching** — System prompt cached across calls, saving ~90% of system-prompt token cost per run
 - **Smart deduplication** — Two-layer Gmail filtering (coarse date query + precise millisecond-level client-side check) prevents re-processing
+- **Shared-sender support** — Multiple newsletters from the same email address (e.g. `donotreply@wordpress.com`) are distinguished by sender display name
 - **Content extraction** — HTML emails are cleaned to extract main content, stripping boilerplate, ads, and navigation
 - **Dry-run mode** — Preview the full pipeline output without writing to your vault or touching Gmail
 - **Error isolation** — One item failing never stops the batch; errors accumulate in a report
@@ -64,6 +65,11 @@ sources:
     name: "My Favourite Newsletter"
   - email: "digest@another.com"
     name: "Weekly Digest"
+  # When multiple newsletters share the same sender email (e.g. a
+  # no-reply address), use sender_name to filter by display name:
+  - email: "donotreply@wordpress.com"
+    name: "Tech Insights"
+    sender_name: "Tech Insights Blog"
 ```
 
 **`config/taxonomy.yaml`** — Define your personal tag vocabulary (see [Building Your Taxonomy](#building-your-taxonomy) below).
