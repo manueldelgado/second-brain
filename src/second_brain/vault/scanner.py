@@ -42,7 +42,7 @@ def _parse_markdown_item(backend: VaultBackend, path: Path) -> IngestItem | None
         title=post.metadata.get("title", path.stem),
         content=post.content,
         source_url=post.metadata.get("source", ""),
-        author=post.metadata.get("author", []),
+        author=post.metadata.get("author") or [],
         published=post.metadata.get("published"),
         metadata={
             "original_path": str(path),
