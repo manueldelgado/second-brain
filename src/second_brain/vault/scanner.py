@@ -10,6 +10,19 @@ import frontmatter
 from second_brain.models import IngestItem
 from second_brain.vault.base import VaultBackend
 
+# Web clippers store the original URL under different frontmatter keys depending
+# on the template. Check them in priority order so the URL is never lost.
+_URL_KEYS = ("source", "url", "link", "clipped_url", "permalink")
+
+
+def _extract_source_url(metadata: dict) -> str:
+    """Return the first non-empty URL-like frontmatter value, or ''."""
+    for key in _URL_KEYS:
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
 
 def scan_inbox(backend: VaultBackend, inbox_folder: str = "00 Inbox") -> list[IngestItem]:
     """Scan the inbox folder and return unprocessed items."""
@@ -41,7 +54,7 @@ def _parse_markdown_item(backend: VaultBackend, path: Path) -> IngestItem | None
         source_type="inbox",
         title=post.metadata.get("title", path.stem),
         content=post.content,
-        source_url=post.metadata.get("source", ""),
+        source_url=_extract_source_url(post.metadata),
         author=post.metadata.get("author") or [],
         published=post.metadata.get("published"),
         metadata={

@@ -103,16 +103,25 @@ class TestComputeAfterDate:
         assert min_internal_date == expected
 
     def test_no_last_sync_ignores_global_last_run(self, tmp_path: Path, settings: Settings) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
+        global_last_run = datetime(2026, 3, 7, 10, 0, 0, tzinfo=timezone.utc)
         state_file = tmp_path / "sync.yaml"
         state_file.write_text(
-            yaml.dump({"global_last_run": "2026-03-07T10:00:00Z"})
+            yaml.dump({"global_last_run": global_last_run.isoformat()})
         )
         sync = SyncState(state_file)
+
+        # Bracket the call so the assertion stays valid no matter when it runs.
+        before = datetime.now(timezone.utc)
         after_date, min_internal_date = _compute_after_date(sync, "Unknown Source", settings)
-        # global_last_run must not be used — new/silent sources always get the lookback window
+        after = datetime.now(timezone.utc)
+
+        # New/silent sources always get the lookback window relative to *now* —
+        # global_last_run must be ignored entirely.
+        lookback = timedelta(days=settings.processing.default_lookback_days)
         assert isinstance(after_date, datetime)
-        assert after_date < datetime(2026, 3, 7, 10, 0, 0, tzinfo=timezone.utc)
+        assert before - lookback <= after_date <= after - lookback
+        assert after_date != global_last_run  # global_last_run not used
         assert min_internal_date is None
 
     def test_fallback_to_default_lookback(self, tmp_path: Path, settings: Settings) -> None:

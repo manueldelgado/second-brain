@@ -30,9 +30,11 @@ class MockLLM:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
+    # Web enrichment is off by default in tests so they never hit the network;
+    # enrichment behaviour is exercised separately with a mocked fetch_article.
     return Settings(
         vault=VaultConfig(root=tmp_path),
-        processing=ProcessingConfig(),
+        processing=ProcessingConfig(enrich_from_web=False),
     )
 
 
@@ -138,7 +140,7 @@ class TestRunInboxPipeline:
         assert report.items_processed == 0
         assert len(llm.calls) == 0
 
-    def test_skips_items_with_no_tags(
+    def test_untagged_item_written_as_needs_tags(
         self,
         tmp_path: Path,
         settings: Settings,
@@ -172,11 +174,17 @@ class TestRunInboxPipeline:
             llm=llm,
         )
 
+        # New behaviour: instead of being abandoned in the inbox, the enriched
+        # note is written and moved to Notes flagged for manual tagging.
         assert report.items_processed == 1
-        assert report.items_skipped == 1
-        # Item should stay in inbox
-        inbox_files = vault.list_folder("00 Inbox")
-        assert len(inbox_files) == 1
+        assert report.items_created == 1
+        assert len(vault.list_folder("00 Inbox")) == 0
+        notes = vault.list_folder("01 Notes")
+        assert len(notes) == 1
+        content = vault.read_note(notes[0])
+        assert "status: needs-tags" in content
+        # The summary and original content survive even without tags.
+        assert "Vague content." in content
 
     def test_dry_run_no_modifications(
         self,
@@ -299,6 +307,151 @@ class TestRunInboxPipeline:
         # Existing fields should be preserved
         assert "My Custom Title" in content
         assert "https://custom.url" in content
+
+    def test_merges_and_validates_tags(
+        self,
+        tmp_path: Path,
+        settings: Settings,
+        taxonomy: TaxonomyConfig,
+    ) -> None:
+        vault = FilesystemBackend(tmp_path)
+        note_content = (
+            "---\n"
+            "title: Tagged Clip\n"
+            "source: ''\n"
+            "author: []\n"
+            "created: 2026-03-07\n"
+            "type: clipping\n"
+            "status: inbox\n"
+            "tags:\n  - clippings\n"
+            "---\n\n"
+            "Body."
+        )
+        _seed_inbox_note(vault, "clip.md", note_content)
+
+        # LLM returns one valid taxonomy tag and one hallucinated one.
+        llm = MockLLM(
+            ContentAnalysis(
+                summary="s",
+                key_takeaways=["k"],
+                tags=["ai/industry-news", "ai/hallucinated"],
+                content_type="clipping",
+                description="d",
+            )
+        )
+
+        run_inbox_pipeline(settings=settings, taxonomy=taxonomy, vault=vault, llm=llm)
+
+        content = vault.read_note(vault.list_folder("01 Notes")[0])
+        assert "clippings" in content            # existing tag kept verbatim
+        assert "ai/industry-news" in content     # valid LLM tag added
+        assert "ai/hallucinated" not in content  # invalid LLM tag dropped
+        assert "status: classified" in content   # a valid tag → classified
+
+    def test_enrichment_recovers_content_and_fixes_metadata(
+        self,
+        tmp_path: Path,
+        taxonomy: TaxonomyConfig,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from second_brain.enrich import WebArticle
+        from second_brain.pipeline import inbox as inbox_mod
+
+        settings = Settings(
+            vault=VaultConfig(root=tmp_path),
+            processing=ProcessingConfig(enrich_from_web=True),
+        )
+        vault = FilesystemBackend(tmp_path)
+        note_content = (
+            "---\n"
+            "title: Stub Clip\n"
+            "source: https://example.com/2026/06/11/post?utm_source=news&id=9\n"
+            "author:\n"
+            "published: 2000-06-11\n"
+            "created: 2026-07-14\n"
+            "type: clipping\n"
+            "status: inbox\n"
+            "tags:\n  - clippings\n"
+            "---\n"
+            "short stub"
+        )
+        _seed_inbox_note(vault, "stub.md", note_content)
+
+        full = "This is the full recovered article body, far longer than the stub. " * 5
+
+        def fake_fetch(url: str, timeout_seconds: int = 20) -> WebArticle:
+            return WebArticle(
+                text=full,
+                title="Stub Clip",
+                author="Jane Doe",
+                date="2026-06-11",
+                canonical_url="https://example.com/2026/06/11/post",
+            )
+
+        monkeypatch.setattr(inbox_mod, "fetch_article", fake_fetch)
+
+        llm = MockLLM(
+            ContentAnalysis(
+                summary="s", key_takeaways=["k"], tags=["ai/industry-news"],
+                content_type="clipping", description="d",
+            )
+        )
+        run_inbox_pipeline(settings=settings, taxonomy=taxonomy, vault=vault, llm=llm)
+
+        content = vault.read_note(vault.list_folder("01 Notes")[0])
+        assert "full recovered article body" in content   # content recovered
+        assert "utm_source" not in content                # tracking stripped
+        assert "[[Jane Doe]]" in content                  # author from fetch
+        assert "2026-06-11" in content                    # corrected date
+        assert "2000-06-11" not in content                # garbage date dropped
+        # The LLM was given the recovered content, not the stub.
+        assert "full recovered article body" in llm.calls[0][0]
+
+    def test_enrichment_keeps_captured_when_fetch_is_shorter(
+        self,
+        tmp_path: Path,
+        taxonomy: TaxonomyConfig,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from second_brain.enrich import WebArticle
+        from second_brain.pipeline import inbox as inbox_mod
+
+        settings = Settings(
+            vault=VaultConfig(root=tmp_path),
+            processing=ProcessingConfig(enrich_from_web=True),
+        )
+        vault = FilesystemBackend(tmp_path)
+        long_capture = "Full paywalled content captured in the browser. " * 10
+        note_content = (
+            "---\n"
+            "title: Paywalled\n"
+            "source: https://paywall.example/article\n"
+            "author: []\n"
+            "created: 2026-07-14\n"
+            "type: clipping\n"
+            "status: inbox\n"
+            "tags: []\n"
+            "---\n"
+            + long_capture
+        )
+        _seed_inbox_note(vault, "pw.md", note_content)
+
+        def fake_fetch(url: str, timeout_seconds: int = 20) -> WebArticle:
+            return WebArticle(text="Short anonymous teaser.")
+
+        monkeypatch.setattr(inbox_mod, "fetch_article", fake_fetch)
+
+        llm = MockLLM(
+            ContentAnalysis(
+                summary="s", key_takeaways=["k"], tags=["ai/industry-news"],
+                content_type="clipping", description="d",
+            )
+        )
+        run_inbox_pipeline(settings=settings, taxonomy=taxonomy, vault=vault, llm=llm)
+
+        content = vault.read_note(vault.list_folder("01 Notes")[0])
+        assert "Full paywalled content captured" in content  # captured kept
+        assert "Short anonymous teaser." not in content      # weaker fetch ignored
 
     def test_empty_inbox(
         self,

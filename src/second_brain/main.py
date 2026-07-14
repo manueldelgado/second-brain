@@ -271,6 +271,7 @@ def resume_batch(ctx: click.Context, verbose: bool) -> None:
                     pending=pending,
                     vault=vault,
                     settings=settings,
+                    taxonomy=taxonomy,
                     dry_run=False,
                 )
                 click.echo(f"    → {created} classified, {skipped} skipped, {len(errors)} errors")

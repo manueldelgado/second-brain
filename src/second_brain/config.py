@@ -53,6 +53,10 @@ class ProcessingConfig(BaseModel):
     default_lookback_days: int = 7
     batch_size: int = 10
     dry_run: bool = False
+    # Inbox enrichment: re-fetch the source URL to recover the full article text
+    # and metadata (author, date) that the web clipper may have missed.
+    enrich_from_web: bool = True
+    web_fetch_timeout_seconds: int = 20
 
 
 # ---------------------------------------------------------------------------
