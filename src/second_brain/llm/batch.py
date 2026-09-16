@@ -18,6 +18,7 @@ class BatchRequest:
     content: str
     taxonomy: TaxonomyConfig
     content_hint: str | None = None
+    include_content_type: bool = True
 
 
 @dataclass

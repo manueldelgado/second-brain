@@ -17,6 +17,7 @@ class LLMProvider(Protocol):
         content: str,
         taxonomy: TaxonomyConfig,
         content_hint: str | None = None,
+        include_content_type: bool = True,
     ) -> ContentAnalysis:
         """Analyze content and return structured classification + summary."""
         ...

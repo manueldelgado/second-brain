@@ -1,91 +1,99 @@
-"""Prompt templates for LLM content analysis."""
+"""Prompt templates and output schema for LLM content analysis."""
 
 from __future__ import annotations
 
 from second_brain.config import TaxonomyConfig
 
+MAX_CONTENT_CHARS = 25_000
 
-def build_system_prompt(taxonomy: TaxonomyConfig) -> str:
+CONTENT_TYPES = ["newsletter", "clipping", "paper", "book", "tool", "note"]
+
+
+def build_system_prompt(taxonomy: TaxonomyConfig, include_content_type: bool = True) -> str:
     """Build system prompt with full taxonomy context."""
-    tag_descriptions = []
-    for tag, scope in taxonomy.descriptive.items():
-        tag_descriptions.append(f"  - {tag}: {scope}")
-    for tag, scope in taxonomy.functional.items():
-        tag_descriptions.append(f"  - {tag}: {scope}")
-
-    rules = "\n".join(f"  - {r}" for r in taxonomy.classification_rules)
+    tag_lines = [f"  - {tag}: {scope}" for tag, scope in taxonomy.descriptive.items()]
+    func_lines = [f"  - {tag}: {scope}" for tag, scope in taxonomy.functional.items()]
+    rules = "\n".join(f"- {r}" for r in taxonomy.classification_rules)
+    content_type_line = (
+        "- content_type: what the item is — newsletter, clipping (a saved web article), "
+        "paper, book, tool or note.\n"
+        if include_content_type
+        else ""
+    )
 
     return f"""\
-You are a content analyst for a knowledge management system (Second Brain).
-Your job is to analyze content and produce structured metadata.
+You summarize and tag content for Manuel Delgado's Second Brain, an Obsidian knowledge base.
 
-## Available Tags
+Manuel writes a blog (manueldelgado.com) and works as a "data & AI strategy for marketing" \
+advisor. Your notes should help him with those two jobs:
+- Blog: arguments, frameworks, data points and counterpoints he could build a post around \
+or push back on.
+- Advisory: ideas, evidence and practices he could bring to a client engagement.
 
-{chr(10).join(tag_descriptions)}
+## What to write
 
-## Classification Rules
+- summary: 2-4 sentences, at most 80 words, in English whatever the source language. State \
+the author's central argument or news and the reasoning or evidence behind it, not a list of \
+topics.
+- key_takeaways: 3-6 items, each a single sentence of at most 25 words. Prefer specific, \
+reusable ideas: a claim worth writing about, a framework, a number, a practice to recommend. \
+Leave out housekeeping such as sponsors, surveys, event plugs and subscription notes.
+- descriptive_tags and functional_tags: see Tags below.
+{content_type_line}\
+- description: one sentence of at most 30 words saying what the piece is and why it is worth \
+keeping.
 
-{rules}
+## Tags
 
-## Output Requirements
+Descriptive tags (what the content is about):
+{chr(10).join(tag_lines)}
 
-- Summary: 2-4 sentences in English, regardless of source language
-- Key takeaways: 3-7 bullet points capturing the main ideas
-- Tags: select from the available tags above (1-3 descriptive + 0-2 functional)
-- Content type: one of newsletter, clipping, paper, book, tool, note
-- Description: one sentence describing the content
+Functional tags (how Manuel can use it):
+{chr(10).join(func_lines)}
 
-Always respond using the classify_content tool."""
+- descriptive_tags: at least one, from the descriptive list.
+- functional_tags: go through every functional tag in turn and include each one whose \
+definition the content meets; leave it out when it does not, since a related topic alone is \
+not enough. The list may be empty.
+
+{rules}"""
 
 
-CLASSIFY_CONTENT_TOOL = {
-    "name": "classify_content",
-    "description": "Classify and summarize a piece of content for the Second Brain.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "summary": {
-                "type": "string",
-                "description": "2-4 sentence summary in English.",
-            },
-            "key_takeaways": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "3-7 bullet points with main ideas.",
-            },
-            "tags": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Tags from the taxonomy (1-3 descriptive + 0-2 functional).",
-            },
-            "content_type": {
-                "type": "string",
-                "enum": ["newsletter", "clipping", "paper", "book", "tool", "note"],
-                "description": "The type of content.",
-            },
-            "description": {
-                "type": "string",
-                "description": "One-sentence description of the content.",
-            },
+def build_output_schema(taxonomy: TaxonomyConfig, include_content_type: bool = True) -> dict:
+    """JSON schema for structured outputs; tag lists are restricted to the taxonomy.
+
+    Separate descriptive/functional lists make the model decide on functional tags explicitly.
+    """
+    properties: dict = {
+        "summary": {"type": "string"},
+        "key_takeaways": {"type": "array", "items": {"type": "string"}},
+        "descriptive_tags": {
+            "type": "array",
+            "items": {"type": "string", "enum": list(taxonomy.descriptive)},
         },
-        "required": ["summary", "key_takeaways", "tags", "content_type", "description"],
-    },
-}
+        "functional_tags": {
+            "type": "array",
+            "items": {"type": "string", "enum": list(taxonomy.functional)},
+        },
+    }
+    if include_content_type:
+        properties["content_type"] = {"type": "string", "enum": CONTENT_TYPES}
+    properties["description"] = {"type": "string"}
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
 
 
 def build_analysis_prompt(content: str, hint: str | None = None) -> str:
     """Build the user message for content analysis."""
     parts = []
     if hint:
-        parts.append(f"Content source hint: {hint}")
-    parts.append("Analyze the following content:\n")
-
-    # Truncate to 6k chars to reduce token usage while keeping quality
-    max_chars = 6_000
-    if len(content) > max_chars:
-        parts.append(content[:max_chars])
-        parts.append(f"\n[... truncated, {len(content) - max_chars} chars omitted]")
-    else:
-        parts.append(content)
-
+        parts.append(f"Source: {hint}\n")
+    if len(content) > MAX_CONTENT_CHARS:
+        omitted = len(content) - MAX_CONTENT_CHARS
+        content = f"{content[:MAX_CONTENT_CHARS]}\n[... truncated, {omitted} chars omitted]"
+    parts.append(f"<content>\n{content}\n</content>")
     return "\n".join(parts)

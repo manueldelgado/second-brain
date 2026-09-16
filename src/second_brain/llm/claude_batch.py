@@ -7,12 +7,7 @@ import logging
 import anthropic
 
 from second_brain.llm.batch import BatchLLMProvider, BatchRequest, BatchResult, BatchStatus
-from second_brain.llm.claude import parse_classify_response
-from second_brain.llm.prompts import (
-    CLASSIFY_CONTENT_TOOL,
-    build_analysis_prompt,
-    build_system_prompt,
-)
+from second_brain.llm.claude import build_request_params, log_usage, parse_analysis_response
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +22,18 @@ class ClaudeBatchProvider:
     Anthropic keeps batch results available for 29 days after completion.
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", max_tokens: int = 4096) -> None:
+    def __init__(
+        self,
+        model: str = "claude-sonnet-4-20250514",
+        max_tokens: int = 4096,
+        thinking: str | None = None,
+        effort: str | None = None,
+    ) -> None:
         self.client = anthropic.Anthropic()
         self.model = model
         self.max_tokens = max_tokens
+        self.thinking = thinking
+        self.effort = effort
 
     # ------------------------------------------------------------------
     # BatchLLMProvider protocol
@@ -69,8 +72,9 @@ class ClaudeBatchProvider:
         for item in self.client.messages.batches.results(batch_id):
             result = item.result
             if result.type == "succeeded":
+                log_usage(result.message, item.custom_id)
                 try:
-                    analysis = parse_classify_response(result.message)
+                    analysis = parse_analysis_response(result.message)
                     results.append(BatchResult(custom_id=item.custom_id, analysis=analysis))
                 except Exception as exc:
                     logger.warning("Failed to parse result for %s: %s", item.custom_id, exc)
@@ -100,18 +104,18 @@ class ClaudeBatchProvider:
     # ------------------------------------------------------------------
 
     def _to_anthropic_request(self, req: BatchRequest) -> dict:
-        system_prompt = build_system_prompt(req.taxonomy)
-        user_message = build_analysis_prompt(req.content, req.content_hint)
         return {
             "custom_id": req.custom_id,
-            "params": {
-                "model": self.model,
-                "max_tokens": self.max_tokens,
-                "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-                "tools": [CLASSIFY_CONTENT_TOOL],
-                "tool_choice": {"type": "tool", "name": "classify_content"},
-                "messages": [{"role": "user", "content": user_message}],
-            },
+            "params": build_request_params(
+                self.model,
+                self.max_tokens,
+                req.taxonomy,
+                req.content,
+                req.content_hint,
+                req.include_content_type,
+                self.thinking,
+                self.effort,
+            ),
         }
 
 

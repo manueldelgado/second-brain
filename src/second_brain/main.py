@@ -41,13 +41,23 @@ def _build_vault(settings):
 def _build_llm(settings):
     from second_brain.llm.claude import ClaudeProvider
 
-    return ClaudeProvider(model=settings.llm.model, max_tokens=settings.llm.max_tokens)
+    return ClaudeProvider(
+        model=settings.llm.model,
+        max_tokens=settings.llm.max_tokens,
+        thinking=settings.llm.thinking,
+        effort=settings.llm.effort,
+    )
 
 
 def _build_batch_provider(settings):
     from second_brain.llm.claude_batch import ClaudeBatchProvider
 
-    return ClaudeBatchProvider(model=settings.llm.model, max_tokens=settings.llm.max_tokens)
+    return ClaudeBatchProvider(
+        model=settings.llm.model,
+        max_tokens=settings.llm.max_tokens,
+        thinking=settings.llm.thinking,
+        effort=settings.llm.effort,
+    )
 
 
 def _build_gmail(settings):

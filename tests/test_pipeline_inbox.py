@@ -23,7 +23,7 @@ class MockLLM:
         self.result = result
         self.calls: list[tuple] = []
 
-    def analyze_content(self, content, taxonomy, content_hint=None):
+    def analyze_content(self, content, taxonomy, content_hint=None, include_content_type=True):
         self.calls.append((content, content_hint))
         return self.result
 

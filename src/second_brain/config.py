@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, field_validator
@@ -35,6 +36,9 @@ class LLMConfig(BaseModel):
     provider: str = "claude"
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 4096
+    # Omitted from requests when None (Haiku 4.5 rejects `effort`).
+    thinking: Literal["adaptive", "disabled"] | None = None
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     batch: BatchConfig = BatchConfig()
 
 

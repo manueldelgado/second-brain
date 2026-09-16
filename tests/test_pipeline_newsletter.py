@@ -30,8 +30,9 @@ class MockLLM:
         self.result = result
         self.calls: list[tuple] = []
 
-    def analyze_content(self, content, taxonomy, content_hint=None):
+    def analyze_content(self, content, taxonomy, content_hint=None, include_content_type=True):
         self.calls.append((content, content_hint))
+        self.include_content_type = include_content_type
         return self.result
 
 
@@ -281,6 +282,47 @@ class TestRunNewsletterPipeline:
 
         assert len(report.errors) == 1
         assert "Gmail fetch failed" in report.errors[0]
+
+
+class TestNewsletterClassificationInputs:
+    @staticmethod
+    def _run(tmp_path, settings, newsletters, taxonomy, analysis):
+        item = IngestItem(
+            source_type="gmail",
+            title="AI Weekly #1",
+            content="Body",
+            published=date(2026, 3, 7),
+            newsletter_name="Benedict Evans",
+            metadata={"message_id": "msg1", "internal_date_iso": "2026-03-07T12:00:00+00:00"},
+        )
+        vault = FilesystemBackend(tmp_path)
+        llm = MockLLM(analysis)
+        run_newsletter_pipeline(
+            settings=settings,
+            newsletters=newsletters,
+            taxonomy=taxonomy,
+            vault=vault,
+            gmail=MockGmail({"Benedict Evans": [item]}),
+            llm=llm,
+            sync_state=SyncState(tmp_path / "sync.yaml"),
+        )
+        note = yaml.safe_load(vault.read_note(vault.list_folder("01 Notes")[0]).split("---")[1])
+        return llm, note
+
+    def test_hint_includes_subject_and_date_without_content_type(
+        self, tmp_path, settings, newsletters, taxonomy, analysis
+    ) -> None:
+        llm, note = self._run(tmp_path, settings, newsletters, taxonomy, analysis)
+        assert llm.calls[0][1] == 'newsletter "Benedict Evans", issue "AI Weekly #1", published 2026-03-07'
+        assert llm.include_content_type is False
+        assert note["status"] == "classified"
+
+    def test_untagged_note_flagged_needs_tags(
+        self, tmp_path, settings, newsletters, taxonomy, analysis
+    ) -> None:
+        untagged = analysis.model_copy(update={"tags": []})
+        _, note = self._run(tmp_path, settings, newsletters, taxonomy, untagged)
+        assert note["status"] == "needs-tags"
 
 
 class FakeBatchProvider:

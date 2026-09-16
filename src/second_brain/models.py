@@ -15,7 +15,7 @@ class ContentAnalysis(BaseModel):
     summary: str
     key_takeaways: list[str]
     tags: list[str]
-    content_type: str
+    content_type: str | None = None
     description: str
 
 

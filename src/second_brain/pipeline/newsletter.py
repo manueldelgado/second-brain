@@ -115,7 +115,9 @@ def _run_sync(
         for item in items:
             report.items_processed += 1
             try:
-                analysis = llm.analyze_content(item.content, taxonomy, content_hint=item.newsletter_name)
+                analysis = llm.analyze_content(
+                    item.content, taxonomy, content_hint=_hint_for(item), include_content_type=False
+                )
                 _write_newsletter_note(
                     item=item,
                     analysis=analysis,
@@ -199,7 +201,8 @@ def _run_batch(
             custom_id=f"item{i:04d}",
             content=item.content,
             taxonomy=taxonomy,
-            content_hint=item.newsletter_name,
+            content_hint=_hint_for(item),
+            include_content_type=False,
         )
         for i, item in enumerate(all_items)
     ]
@@ -320,6 +323,8 @@ def _write_newsletter_note(
     dry_run: bool,
 ) -> None:
     """Render and persist a single newsletter note (sync and batch share this)."""
+    if not analysis.tags:
+        logger.warning("  No tags for '%s' — writing with status: needs-tags", item.title)
     message_id = item.metadata.get("message_id")
     gmail_url = f"https://mail.google.com/mail/u/0/#all/{message_id}" if message_id else None
     fm = NoteFrontmatter(
@@ -328,7 +333,7 @@ def _write_newsletter_note(
         author=item.author,
         created=date.today(),
         type="newsletter",
-        status="classified",
+        status="classified" if analysis.tags else "needs-tags",
         tags=analysis.tags,
         description=analysis.description,
         newsletter=item.newsletter_name,
@@ -355,6 +360,13 @@ def _write_newsletter_note(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _hint_for(item: IngestItem) -> str:
+    parts = [f'newsletter "{item.newsletter_name}"', f'issue "{item.title}"']
+    if item.published:
+        parts.append(f"published {item.published.isoformat()}")
+    return ", ".join(parts)
+
 
 def _apply_label_safe(
     gmail: GmailClient | None,

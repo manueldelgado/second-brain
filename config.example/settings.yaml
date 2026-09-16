@@ -12,6 +12,10 @@ llm:
   provider: "claude"
   model: "claude-haiku-4-5-20251001"   # See console.anthropic.com for available models
   max_tokens: 2048
+  # Optional; omit for Haiku 4.5 (it rejects `effort`). For Sonnet 5 use thinking: "disabled"
+  # (or "adaptive" with a larger max_tokens) and effort: low | medium | high | xhigh | max.
+  # thinking: "disabled"
+  # effort: "low"
   batch:
     poll_interval_seconds: 30          # How often to check batch status when waiting inline
     timeout_hours: 24                  # Give up polling after this many hours

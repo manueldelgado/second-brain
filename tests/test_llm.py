@@ -1,15 +1,19 @@
-"""Tests for LLM layer — prompts and response parsing."""
+"""Tests for LLM layer — prompts, request params and response parsing."""
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from second_brain.config import TaxonomyConfig
+from second_brain.llm.claude import build_request_params, parse_analysis_response
 from second_brain.llm.prompts import (
-    CLASSIFY_CONTENT_TOOL,
+    MAX_CONTENT_CHARS,
     build_analysis_prompt,
+    build_output_schema,
     build_system_prompt,
 )
 from second_brain.models import ContentAnalysis
@@ -27,7 +31,7 @@ def taxonomy() -> TaxonomyConfig:
         },
         classification_rules=[
             "Use 1-3 descriptive tags",
-            "When in doubt, use fewer tags",
+            "Never leave a note without tags",
         ],
     )
 
@@ -46,149 +50,119 @@ class TestBuildSystemPrompt:
     def test_includes_rules(self, taxonomy: TaxonomyConfig) -> None:
         prompt = build_system_prompt(taxonomy)
         assert "Use 1-3 descriptive tags" in prompt
-        assert "When in doubt, use fewer tags" in prompt
+        assert "Never leave a note without tags" in prompt
 
-    def test_includes_tool_instruction(self, taxonomy: TaxonomyConfig) -> None:
-        prompt = build_system_prompt(taxonomy)
-        assert "classify_content" in prompt
+    def test_content_type_instruction_is_optional(self, taxonomy: TaxonomyConfig) -> None:
+        assert "content_type" in build_system_prompt(taxonomy)
+        assert "content_type" not in build_system_prompt(taxonomy, include_content_type=False)
 
 
 class TestBuildAnalysisPrompt:
     def test_without_hint(self) -> None:
         prompt = build_analysis_prompt("Some content here")
-        assert "Some content here" in prompt
+        assert "<content>\nSome content here\n</content>" in prompt
+        assert "Source:" not in prompt
 
     def test_with_hint(self) -> None:
         prompt = build_analysis_prompt("Content", hint="Benedict Evans")
-        assert "Benedict Evans" in prompt
+        assert "Source: Benedict Evans" in prompt
         assert "Content" in prompt
 
     def test_truncation(self) -> None:
-        long_content = "x" * 50_000
-        prompt = build_analysis_prompt(long_content)
-        assert "truncated" in prompt
-        assert len(prompt) < 50_000
+        prompt = build_analysis_prompt("x" * (MAX_CONTENT_CHARS + 5_000))
+        assert "truncated, 5000 chars omitted" in prompt
+        assert len(prompt) < MAX_CONTENT_CHARS + 200
 
-    def test_no_truncation_short_content(self) -> None:
-        prompt = build_analysis_prompt("short text")
+    def test_no_truncation_below_limit(self) -> None:
+        prompt = build_analysis_prompt("x" * MAX_CONTENT_CHARS)
         assert "truncated" not in prompt
 
 
-class TestClassifyContentTool:
-    def test_tool_schema_has_required_fields(self) -> None:
-        schema = CLASSIFY_CONTENT_TOOL
-        assert schema["name"] == "classify_content"
-        props = schema["input_schema"]["properties"]
-        assert "summary" in props
-        assert "key_takeaways" in props
-        assert "tags" in props
-        assert "content_type" in props
-        assert "description" in props
-
-    def test_content_type_enum(self) -> None:
-        enum = CLASSIFY_CONTENT_TOOL["input_schema"]["properties"]["content_type"]["enum"]
-        assert "newsletter" in enum
-        assert "clipping" in enum
-        assert "paper" in enum
-        assert "book" in enum
-
-
-class TestClaudeProviderParseResponse:
-    def test_parse_tool_use_response(self) -> None:
-        from second_brain.llm.claude import ClaudeProvider, parse_classify_response
-
-        provider = ClaudeProvider.__new__(ClaudeProvider)
-
-        # Create a mock response with tool_use block
-        tool_block = MagicMock()
-        tool_block.type = "tool_use"
-        tool_block.name = "classify_content"
-        tool_block.input = {
-            "summary": "Test summary",
-            "key_takeaways": ["Point 1", "Point 2"],
-            "tags": ["ai/industry-news"],
-            "content_type": "newsletter",
-            "description": "Test description",
+class TestOutputSchema:
+    def test_required_fields_and_strictness(self, taxonomy: TaxonomyConfig) -> None:
+        schema = build_output_schema(taxonomy)
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == {
+            "summary", "key_takeaways", "descriptive_tags", "functional_tags",
+            "content_type", "description",
         }
 
-        response = MagicMock()
-        response.content = [tool_block]
+    def test_tag_lists_restricted_to_taxonomy(self, taxonomy: TaxonomyConfig) -> None:
+        props = build_output_schema(taxonomy)["properties"]
+        assert props["descriptive_tags"]["items"]["enum"] == ["ai/industry-news", "data/tools"]
+        assert props["functional_tags"]["items"]["enum"] == ["func/trend-monitoring"]
 
-        result = parse_classify_response(response)
+    def test_content_type_can_be_omitted(self, taxonomy: TaxonomyConfig) -> None:
+        schema = build_output_schema(taxonomy, include_content_type=False)
+        assert "content_type" not in schema["properties"]
+        assert "content_type" not in schema["required"]
+
+
+class TestBuildRequestParams:
+    def test_uses_structured_output_without_tools(self, taxonomy: TaxonomyConfig) -> None:
+        params = build_request_params("m", 100, taxonomy, "body", "hint")
+        assert "tools" not in params
+        assert params["output_config"]["format"]["type"] == "json_schema"
+        assert params["system"][0]["cache_control"] == {"type": "ephemeral"}
+        assert "Source: hint" in params["messages"][0]["content"]
+
+    def test_thinking_and_effort_omitted_by_default(self, taxonomy: TaxonomyConfig) -> None:
+        params = build_request_params("m", 100, taxonomy, "body")
+        assert "thinking" not in params
+        assert "effort" not in params["output_config"]
+
+    def test_thinking_and_effort_when_set(self, taxonomy: TaxonomyConfig) -> None:
+        params = build_request_params(
+            "m", 100, taxonomy, "body", thinking="disabled", effort="low"
+        )
+        assert params["thinking"] == {"type": "disabled"}
+        assert params["output_config"]["effort"] == "low"
+
+
+def _response(text: str | None, stop_reason: str = "end_turn") -> MagicMock:
+    response = MagicMock()
+    response.stop_reason = stop_reason
+    if text is None:
+        response.content = []
+    else:
+        block = MagicMock()
+        block.type = "text"
+        block.text = text
+        response.content = [block]
+    return response
+
+
+VALID = {
+    "summary": "Test summary",
+    "key_takeaways": ["Point 1", "Point 2"],
+    "descriptive_tags": ["ai/industry-news"],
+    "functional_tags": ["func/trend-monitoring"],
+    "description": "Test description",
+}
+
+
+class TestParseAnalysisResponse:
+    def test_parses_json_text(self) -> None:
+        result = parse_analysis_response(_response(json.dumps({**VALID, "content_type": "newsletter"})))
         assert isinstance(result, ContentAnalysis)
         assert result.summary == "Test summary"
-        assert result.tags == ["ai/industry-news"]
+        assert result.tags == ["ai/industry-news", "func/trend-monitoring"]
         assert result.content_type == "newsletter"
 
-    def test_parse_response_no_tool_use_raises(self) -> None:
-        from second_brain.llm.claude import ClaudeProvider, parse_classify_response
+    def test_content_type_optional(self) -> None:
+        assert parse_analysis_response(_response(json.dumps(VALID))).content_type is None
 
-        provider = ClaudeProvider.__new__(ClaudeProvider)
+    @pytest.mark.parametrize("stop_reason", ["max_tokens", "refusal"])
+    def test_incomplete_response_raises(self, stop_reason: str) -> None:
+        with pytest.raises(ValueError, match=stop_reason):
+            parse_analysis_response(_response(json.dumps(VALID), stop_reason))
 
-        text_block = MagicMock()
-        text_block.type = "text"
-        text_block.model_dump.return_value = {"type": "text", "text": "Hello"}
+    def test_no_text_block_raises(self) -> None:
+        with pytest.raises(ValueError, match="No text block"):
+            parse_analysis_response(_response(None))
 
-        response = MagicMock()
-        response.content = [text_block]
-
-        with pytest.raises(ValueError, match="No classify_content"):
-            parse_classify_response(response)
-
-    def test_parse_response_wrong_tool_name_raises(self) -> None:
-        from second_brain.llm.claude import ClaudeProvider, parse_classify_response
-
-        provider = ClaudeProvider.__new__(ClaudeProvider)
-
-        tool_block = MagicMock()
-        tool_block.type = "tool_use"
-        tool_block.name = "other_tool"
-        tool_block.model_dump.return_value = {"type": "tool_use", "name": "other_tool"}
-
-        response = MagicMock()
-        response.content = [tool_block]
-
-        with pytest.raises(ValueError, match="No classify_content"):
-            parse_classify_response(response)
-
-    @staticmethod
-    def _response(tool_input: dict) -> MagicMock:
-        tool_block = MagicMock()
-        tool_block.type = "tool_use"
-        tool_block.name = "classify_content"
-        tool_block.input = tool_input
-        response = MagicMock()
-        response.content = [tool_block]
-        response.stop_reason = "tool_use"
-        return response
-
-    def test_parse_response_missing_key_takeaways_defaults_to_empty(self, caplog) -> None:
-        from second_brain.llm.claude import parse_classify_response
-
-        response = self._response({
-            "summary": "s",
-            "tags": [],
-            "content_type": "newsletter",
-            "description": "d",
-        })
-
-        result = parse_classify_response(response)
-        assert result.key_takeaways == []
-        assert "no key_takeaways" in caplog.text
-
-    def test_parse_response_invalid_input_logs_raw_data(self, caplog) -> None:
-        from pydantic import ValidationError
-
-        from second_brain.llm.claude import parse_classify_response
-
-        response = self._response({
-            "key_takeaways": ["k"],
-            "tags": [],
-            "content_type": "newsletter",
-            "description": "raw-marker",
-        })
-
+    def test_invalid_output_logs_raw_text(self, caplog) -> None:
+        bad = json.dumps({"summary": "raw-marker", "descriptive_tags": [], "functional_tags": []})
         with pytest.raises(ValidationError):
-            parse_classify_response(response)
+            parse_analysis_response(_response(bad))
         assert "raw-marker" in caplog.text
-        assert "stop_reason=tool_use" in caplog.text

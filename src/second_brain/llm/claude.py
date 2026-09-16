@@ -11,8 +11,8 @@ from pydantic import ValidationError
 
 from second_brain.config import TaxonomyConfig
 from second_brain.llm.prompts import (
-    CLASSIFY_CONTENT_TOOL,
     build_analysis_prompt,
+    build_output_schema,
     build_system_prompt,
 )
 from second_brain.models import ContentAnalysis
@@ -20,113 +20,123 @@ from second_brain.models import ContentAnalysis
 logger = logging.getLogger(__name__)
 
 
-def parse_classify_response(response: anthropic.types.Message) -> ContentAnalysis:
-    """Extract ContentAnalysis from a classify_content tool-use response.
+def build_request_params(
+    model: str,
+    max_tokens: int,
+    taxonomy: TaxonomyConfig,
+    content: str,
+    content_hint: str | None = None,
+    include_content_type: bool = True,
+    thinking: str | None = None,
+    effort: str | None = None,
+) -> dict:
+    """Messages API params for one analysis request (shared by sync and batch)."""
+    output_config: dict = {
+        "format": {
+            "type": "json_schema",
+            "schema": build_output_schema(taxonomy, include_content_type),
+        }
+    }
+    if effort:
+        output_config["effort"] = effort
+    params: dict = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": [
+            {
+                "type": "text",
+                "text": build_system_prompt(taxonomy, include_content_type),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        "messages": [{"role": "user", "content": build_analysis_prompt(content, content_hint)}],
+        "output_config": output_config,
+    }
+    if thinking:
+        params["thinking"] = {"type": thinking}
+    return params
 
-    Shared by ClaudeProvider (sync) and ClaudeBatchProvider (batch).
-    """
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "classify_content":
-            data = block.input
-            # Handle case where input is a string (malformed response)
-            if isinstance(data, str):
-                try:
-                    data = json.loads(data)
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse tool input as JSON: %s", data)
-                    raise ValueError(f"Tool input is not valid JSON: {data}")
 
-            # Normalize key_takeaways if it's a string
-            if isinstance(data.get("key_takeaways"), str):
-                takeaways_str = data["key_takeaways"].strip()
-                if takeaways_str.startswith("["):
-                    try:
-                        data["key_takeaways"] = json.loads(takeaways_str)
-                    except json.JSONDecodeError:
-                        data["key_takeaways"] = [takeaways_str]
-                else:
-                    lines = [
-                        line.strip("- ").strip()
-                        for line in takeaways_str.split("\n")
-                        if line.strip() and line.strip() != "-"
-                    ]
-                    data["key_takeaways"] = lines if lines else ["Unable to extract takeaways"]
-
-            # Ensure tags is a list
-            if isinstance(data.get("tags"), str):
-                tags_str = data["tags"].strip()
-                if tags_str.startswith("["):
-                    try:
-                        data["tags"] = json.loads(tags_str)
-                    except json.JSONDecodeError:
-                        data["tags"] = []
-                else:
-                    data["tags"] = [t.strip() for t in tags_str.split(",") if t.strip()]
-
-            if "tags" not in data:
-                data["tags"] = []
-
-            if data.get("key_takeaways") is None:
-                logger.warning(
-                    "classify_content response has no key_takeaways (stop_reason=%s); using []",
-                    response.stop_reason,
-                )
-                data["key_takeaways"] = []
-
-            try:
-                return ContentAnalysis(**data)
-            except ValidationError:
-                logger.warning(
-                    "Invalid classify_content input (stop_reason=%s): %s",
-                    response.stop_reason,
-                    json.dumps(data, ensure_ascii=False),
-                )
-                raise
-
-    raise ValueError(
-        f"No classify_content tool use in response: "
-        f"{json.dumps([b.model_dump() for b in response.content], indent=2)}"
+def log_usage(response: anthropic.types.Message, label: str) -> None:
+    u = response.usage
+    logger.info(
+        "LLM usage [%s] model=%s input=%d cache_read=%d cache_write=%d output=%d stop=%s",
+        label,
+        response.model,
+        u.input_tokens,
+        u.cache_read_input_tokens or 0,
+        u.cache_creation_input_tokens or 0,
+        u.output_tokens,
+        response.stop_reason,
     )
 
 
-class ClaudeProvider:
-    """LLM provider using the Anthropic Claude API with tool use."""
+def parse_analysis_response(response: anthropic.types.Message) -> ContentAnalysis:
+    """Extract ContentAnalysis from a structured-output (JSON schema) response.
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", max_tokens: int = 4096) -> None:
+    Shared by ClaudeProvider (sync) and ClaudeBatchProvider (batch).
+    """
+    if response.stop_reason in ("max_tokens", "refusal"):
+        raise ValueError(f"Incomplete analysis response (stop_reason={response.stop_reason})")
+
+    text = next((b.text for b in response.content if b.type == "text"), None)
+    if text is None:
+        raise ValueError(f"No text block in response (stop_reason={response.stop_reason})")
+
+    try:
+        data = json.loads(text)
+        data["tags"] = data.pop("descriptive_tags") + data.pop("functional_tags")
+        return ContentAnalysis(**data)
+    except (json.JSONDecodeError, ValidationError, TypeError, KeyError):
+        logger.warning(
+            "Invalid analysis output (stop_reason=%s): %s", response.stop_reason, text
+        )
+        raise
+
+
+class ClaudeProvider:
+    """LLM provider using the Anthropic Claude API with structured outputs."""
+
+    def __init__(
+        self,
+        model: str = "claude-sonnet-4-20250514",
+        max_tokens: int = 4096,
+        thinking: str | None = None,
+        effort: str | None = None,
+    ) -> None:
         self.client = anthropic.Anthropic()  # Uses ANTHROPIC_API_KEY env var
         self.model = model
         self.max_tokens = max_tokens
+        self.thinking = thinking
+        self.effort = effort
 
     def analyze_content(
         self,
         content: str,
         taxonomy: TaxonomyConfig,
         content_hint: str | None = None,
+        include_content_type: bool = True,
     ) -> ContentAnalysis:
-        """Analyze content via Claude API with structured tool-use output."""
-        system_prompt = build_system_prompt(taxonomy)
-        user_message = build_analysis_prompt(content, content_hint)
+        """Analyze content via Claude API with JSON-schema structured output."""
+        params = build_request_params(
+            self.model,
+            self.max_tokens,
+            taxonomy,
+            content,
+            content_hint,
+            include_content_type,
+            self.thinking,
+            self.effort,
+        )
+        response = self._call_with_retry(params)
+        log_usage(response, content_hint or "sync")
+        return parse_analysis_response(response)
 
-        response = self._call_with_retry(system_prompt, user_message)
-        return parse_classify_response(response)
-
-    def _call_with_retry(
-        self,
-        system: str,
-        user_message: str,
-        max_retries: int = 3,
-    ) -> anthropic.types.Message:
+    def _call_with_retry(self, params: dict, max_retries: int = 3) -> anthropic.types.Message:
         """Call the API with exponential backoff on rate limits."""
         for attempt in range(max_retries):
             try:
-                return self.client.messages.create(
-                    model=self.model,
-                    max_tokens=self.max_tokens,
-                    system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-                    tools=[CLASSIFY_CONTENT_TOOL],
-                    tool_choice={"type": "tool", "name": "classify_content"},
-                    messages=[{"role": "user", "content": user_message}],
-                )
+                return self.client.messages.create(**params)
             except anthropic.RateLimitError:
                 if attempt == max_retries - 1:
                     raise
