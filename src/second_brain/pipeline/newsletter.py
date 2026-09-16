@@ -246,6 +246,7 @@ def _run_batch(
         settings=settings,
         sync_state=sync_state,
         dry_run=dry_run,
+        gmail=gmail,
     )
     report.items_created = created
     report.errors.extend(errors)

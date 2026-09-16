@@ -48,7 +48,7 @@ class MockGmail:
         return "label_mock"
 
     def apply_label(self, message_id, label_id):
-        pass
+        self.labelled = getattr(self, "labelled", []) + [(message_id, label_id)]
 
 
 @pytest.fixture
@@ -281,3 +281,53 @@ class TestRunNewsletterPipeline:
 
         assert len(report.errors) == 1
         assert "Gmail fetch failed" in report.errors[0]
+
+
+class FakeBatchProvider:
+    def __init__(self, analysis: ContentAnalysis) -> None:
+        self.analysis = analysis
+        self.requests = []
+
+    def submit_batch(self, requests):
+        self.requests = requests
+        return "batch_1"
+
+    def get_batch_status(self, batch_id):
+        from second_brain.llm.batch import BatchStatus
+
+        n = len(self.requests)
+        return BatchStatus(batch_id=batch_id, state="complete", total=n, succeeded=n, failed=0)
+
+    def get_batch_results(self, batch_id):
+        from second_brain.llm.batch import BatchResult
+
+        return [BatchResult(custom_id=r.custom_id, analysis=self.analysis) for r in self.requests]
+
+    def cancel_batch(self, batch_id):
+        pass
+
+
+class TestInlineBatch:
+    def test_inline_batch_applies_gmail_label(
+        self, tmp_path, settings, newsletters, taxonomy, analysis
+    ) -> None:
+        item = IngestItem(
+            source_type="gmail",
+            title="AI Weekly #1",
+            content="Body",
+            newsletter_name="Benedict Evans",
+            metadata={"message_id": "msg1", "internal_date_iso": "2026-03-07T12:00:00+00:00"},
+        )
+        gmail = MockGmail({"Benedict Evans": [item]})
+        report = run_newsletter_pipeline(
+            settings=settings,
+            newsletters=newsletters,
+            taxonomy=taxonomy,
+            vault=FilesystemBackend(tmp_path),
+            gmail=gmail,
+            llm=MockLLM(analysis),
+            sync_state=SyncState(tmp_path / "sync.yaml"),
+            batch_provider=FakeBatchProvider(analysis),
+        )
+        assert report.items_created == 1
+        assert gmail.labelled == [("msg1", "label_mock")]
