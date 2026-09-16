@@ -16,7 +16,9 @@ Both pipelines support synchronous and batch execution modes, dry-run previews, 
 
 - **AI-powered classification** — Claude reads your content and assigns tags from your personal taxonomy, writes a summary, and extracts key takeaways
 - **Batch mode** — Submit all items to Anthropic's Messages Batches API in one call (50% cost reduction); fire-and-forget with `--no-wait` and finalize later with `resume-batch`
-- **Prompt caching** — System prompt cached across calls, saving ~90% of system-prompt token cost per run
+- **Structured outputs** — Claude's answer always matches a JSON schema, and tags can only come from your taxonomy
+- **Prompt caching** — System prompt cached across calls (on models whose minimum cacheable prompt length your taxonomy exceeds, e.g. Sonnet 5 but not Haiku 4.5)
+- **Token usage logging** — Every request logs its input, cache and output tokens for cost tracking
 - **Smart deduplication** — Two-layer Gmail filtering (coarse date query + precise millisecond-level client-side check) prevents re-processing
 - **Shared-sender support** — Multiple newsletters from the same email address (e.g. `donotreply@wordpress.com`) are distinguished by sender display name
 - **Content extraction** — HTML emails are cleaned to extract main content, stripping boilerplate, ads, and navigation
@@ -55,7 +57,11 @@ You need to edit three files:
 vault:
   root: "~/Documents/MyVault"   # Your Obsidian vault path
 llm:
-  model: "claude-haiku-4-5-20251001"  # Fast and cheap; upgrade to Sonnet for better results
+  model: "claude-haiku-4-5-20251001"  # Cheapest; claude-sonnet-5 gives better summaries and tags
+  max_tokens: 2048
+  # For Sonnet 5, also set (and raise max_tokens to ~8000):
+  # thinking: "adaptive"
+  # effort: "low"
 processing:
   default_lookback_days: 7      # How far back to look for new newsletter sources
 ```
@@ -125,6 +131,14 @@ The taxonomy is the heart of the system — it defines the tags Claude can assig
 
 The example in `config.example/taxonomy.yaml` is intentionally minimal. Here's how to build your own:
 
+**0. Say who the notes are for (optional).** A short `context` paragraph (your work, what you write, what you'll use notes for) is added to Claude's instructions, so summaries, takeaways and functional tags are chosen with that use in mind.
+
+```yaml
+context: |-
+  The Second Brain belongs to a product manager who writes a newsletter about
+  software and teaches a university course on digital strategy.
+```
+
 **1. Start with your interests.** What topics do you read about? What do you want to track over time? These become your **descriptive tags** — they describe what content is _about_.
 
 ```yaml
@@ -150,10 +164,11 @@ functional:
 classification_rules:
   - "Use 1-3 descriptive tags and 0-2 functional tags per note"
   - "Be specific: prefer tech/ai over tech/ if the content is primarily about AI"
-  - "When in doubt, use fewer tags rather than misclassify"
+  - "Never leave a note without tags: if unsure, pick the single closest descriptive tag"
 ```
 
 **Tips:**
+- Write functional tag definitions as a test the model can apply: what qualifies, what doesn't, and roughly how often it should apply (e.g. "more than half of newsletters"). One-line definitions lead models to apply functional tags to almost everything or to almost nothing
 - Use hierarchical tags with `/` as separator (e.g., `tech/ai`, `tech/web`) — Obsidian renders these as nested tags
 - Start small (10-20 tags) and expand as you see what content you actually receive
 - Run `--dry-run` after changes to see how the LLM classifies with your new taxonomy before committing
@@ -199,14 +214,14 @@ second-brain vault init [--force]          # Scaffold vault folders + templates
 
 1. Reads per-source timestamps from `sync_state.yaml` to know where it left off.
 2. For each source, queries Gmail with a date filter and then applies a precise client-side check to avoid re-processing.
-3. For each new email: extracts text (strips HTML boilerplate) → sends to Claude → creates a Markdown note in `01 Notes/` → labels the email in Gmail → updates the sync timestamp.
+3. For each new email: extracts text (strips HTML boilerplate) → sends up to 25,000 characters to Claude with the newsletter name, subject and date → creates a Markdown note in `01 Notes/` (flagged `status: needs-tags` if Claude assigned no tags) → labels the email in Gmail → updates the sync timestamp.
 4. New sources with no history automatically look back `default_lookback_days` (default: 7).
 
 ### Inbox Pipeline
 
 1. Scans `00 Inbox/` for notes with `status: inbox` or missing frontmatter.
 2. Sends content to Claude for classification.
-3. If tags are assigned, updates frontmatter and moves the note to `01 Notes/`. Otherwise, leaves it for manual review.
+3. Updates frontmatter and moves the note to `01 Notes/`. Notes Claude couldn't tag are still moved, flagged `status: needs-tags` for manual review.
 4. PDFs are copied to `04 Assets/` with a wrapper note created in their place.
 
 ### Batch Mode
@@ -217,7 +232,7 @@ With `--no-wait`, the tool submits the batch and exits immediately. Run `resume-
 
 ## Cost
 
-Using Claude Haiku (default): roughly **$0.01–0.03 per item** in synchronous mode. Batch mode reduces this by ~50%. Prompt caching (enabled by default) further reduces system-prompt token cost by ~90% from the second call onward.
+Measured on newsletters of up to 25,000 characters in batch mode: about **$0.004 per item with Claude Haiku 4.5** and **$0.01 per item with Claude Sonnet 5** (low-effort thinking). Synchronous mode costs about twice as much. Prompt caching lowers the system-prompt cost further on models where it applies.
 
 ## Troubleshooting
 

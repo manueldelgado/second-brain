@@ -85,6 +85,8 @@ class TaxonomyConfig(BaseModel):
     descriptive: dict[str, str]
     functional: dict[str, str]
     classification_rules: list[str]
+    # Who the notes are for; inserted near the top of the system prompt.
+    context: str = ""
 
     @property
     def all_valid_tags(self) -> set[str]:

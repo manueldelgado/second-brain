@@ -52,6 +52,12 @@ class TestBuildSystemPrompt:
         assert "Use 1-3 descriptive tags" in prompt
         assert "Never leave a note without tags" in prompt
 
+    def test_context_included_only_when_set(self, taxonomy: TaxonomyConfig) -> None:
+        assert "## What to write" in build_system_prompt(taxonomy)
+        with_context = taxonomy.model_copy(update={"context": "Notes are for a CMO.\n"})
+        prompt = build_system_prompt(with_context)
+        assert "knowledge base.\n\nNotes are for a CMO.\n\n## What to write" in prompt
+
     def test_content_type_instruction_is_optional(self, taxonomy: TaxonomyConfig) -> None:
         assert "content_type" in build_system_prompt(taxonomy)
         assert "content_type" not in build_system_prompt(taxonomy, include_content_type=False)

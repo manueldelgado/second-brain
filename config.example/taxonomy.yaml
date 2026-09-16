@@ -9,6 +9,14 @@
 #
 # This is a minimal illustrative example. Replace it entirely with
 # your own vocabulary — the program imposes no structure on tag names.
+# Functional tags work best with detailed definitions: what qualifies, what
+# doesn't, and roughly how often the tag should apply.
+
+# Optional: who the notes are for. Inserted near the top of the LLM's instructions,
+# so summaries, takeaways and functional tags are chosen with this use in mind.
+context: |-
+  The Second Brain belongs to a product manager who writes a newsletter about
+  software and teaches a university course on digital strategy.
 
 descriptive:
   tech/ai: "Artificial intelligence, machine learning, LLMs"
@@ -30,4 +38,4 @@ functional:
 classification_rules:
   - "Use 1-3 descriptive tags and 0-2 functional tags per note"
   - "Be specific: prefer tech/ai over a broader tag if the content is primarily about AI"
-  - "When in doubt, use fewer tags rather than misclassify"
+  - "Never leave a note without tags: if unsure, pick the single closest descriptive tag"

@@ -14,6 +14,7 @@ def build_system_prompt(taxonomy: TaxonomyConfig, include_content_type: bool = T
     tag_lines = [f"  - {tag}: {scope}" for tag, scope in taxonomy.descriptive.items()]
     func_lines = [f"  - {tag}: {scope}" for tag, scope in taxonomy.functional.items()]
     rules = "\n".join(f"- {r}" for r in taxonomy.classification_rules)
+    context = f"{taxonomy.context.strip()}\n\n" if taxonomy.context.strip() else ""
     content_type_line = (
         "- content_type: what the item is — newsletter, clipping (a saved web article), "
         "paper, book, tool or note.\n"
@@ -22,15 +23,9 @@ def build_system_prompt(taxonomy: TaxonomyConfig, include_content_type: bool = T
     )
 
     return f"""\
-You summarize and tag content for Manuel Delgado's Second Brain, an Obsidian knowledge base.
+You summarize and tag content for a Second Brain, an Obsidian knowledge base.
 
-Manuel writes a blog (manueldelgado.com) and works as a "data & AI strategy for marketing" \
-advisor. Your notes should help him with those two jobs:
-- Blog: arguments, frameworks, data points and counterpoints he could build a post around \
-or push back on.
-- Advisory: ideas, evidence and practices he could bring to a client engagement.
-
-## What to write
+{context}## What to write
 
 - summary: 2-4 sentences, at most 80 words, in English whatever the source language. State \
 the author's central argument or news and the reasoning or evidence behind it, not a list of \
@@ -48,7 +43,7 @@ keeping.
 Descriptive tags (what the content is about):
 {chr(10).join(tag_lines)}
 
-Functional tags (how Manuel can use it):
+Functional tags (how the owner can use it):
 {chr(10).join(func_lines)}
 
 - descriptive_tags: at least one, from the descriptive list.
