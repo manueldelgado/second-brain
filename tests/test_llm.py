@@ -150,3 +150,45 @@ class TestClaudeProviderParseResponse:
 
         with pytest.raises(ValueError, match="No classify_content"):
             parse_classify_response(response)
+
+    @staticmethod
+    def _response(tool_input: dict) -> MagicMock:
+        tool_block = MagicMock()
+        tool_block.type = "tool_use"
+        tool_block.name = "classify_content"
+        tool_block.input = tool_input
+        response = MagicMock()
+        response.content = [tool_block]
+        response.stop_reason = "tool_use"
+        return response
+
+    def test_parse_response_missing_key_takeaways_defaults_to_empty(self, caplog) -> None:
+        from second_brain.llm.claude import parse_classify_response
+
+        response = self._response({
+            "summary": "s",
+            "tags": [],
+            "content_type": "newsletter",
+            "description": "d",
+        })
+
+        result = parse_classify_response(response)
+        assert result.key_takeaways == []
+        assert "no key_takeaways" in caplog.text
+
+    def test_parse_response_invalid_input_logs_raw_data(self, caplog) -> None:
+        from pydantic import ValidationError
+
+        from second_brain.llm.claude import parse_classify_response
+
+        response = self._response({
+            "key_takeaways": ["k"],
+            "tags": [],
+            "content_type": "newsletter",
+            "description": "raw-marker",
+        })
+
+        with pytest.raises(ValidationError):
+            parse_classify_response(response)
+        assert "raw-marker" in caplog.text
+        assert "stop_reason=tool_use" in caplog.text

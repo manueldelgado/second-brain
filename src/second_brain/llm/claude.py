@@ -7,6 +7,7 @@ import logging
 import time
 
 import anthropic
+from pydantic import ValidationError
 
 from second_brain.config import TaxonomyConfig
 from second_brain.llm.prompts import (
@@ -65,7 +66,22 @@ def parse_classify_response(response: anthropic.types.Message) -> ContentAnalysi
             if "tags" not in data:
                 data["tags"] = []
 
-            return ContentAnalysis(**data)
+            if data.get("key_takeaways") is None:
+                logger.warning(
+                    "classify_content response has no key_takeaways (stop_reason=%s); using []",
+                    response.stop_reason,
+                )
+                data["key_takeaways"] = []
+
+            try:
+                return ContentAnalysis(**data)
+            except ValidationError:
+                logger.warning(
+                    "Invalid classify_content input (stop_reason=%s): %s",
+                    response.stop_reason,
+                    json.dumps(data, ensure_ascii=False),
+                )
+                raise
 
     raise ValueError(
         f"No classify_content tool use in response: "
