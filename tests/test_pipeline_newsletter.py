@@ -406,3 +406,44 @@ class TestInlineBatch:
         )
         assert report.items_created == 1
         assert gmail.labelled == [("msg1", "label_mock")]
+
+
+class TestNoResubmitWhilePending:
+    """Sync state only advances on finalize, so a second submit before then
+    re-fetches the same emails — they must not be submitted (and written) twice."""
+
+    def test_second_submit_skips_items_in_pending_batch(
+        self, tmp_path, settings, newsletters, taxonomy, analysis
+    ) -> None:
+        from second_brain.pipeline.batch_state import BatchStateManager
+
+        item = IngestItem(
+            source_type="gmail",
+            title="AI Weekly #1",
+            content="Body",
+            newsletter_name="Benedict Evans",
+            metadata={"message_id": "msg1", "internal_date_iso": "2026-03-07T12:00:00+00:00"},
+        )
+        batch_state = BatchStateManager(tmp_path / "batch_state.yaml")
+        provider = FakeBatchProvider(analysis)
+
+        def submit():
+            return run_newsletter_pipeline(
+                settings=settings,
+                newsletters=newsletters,
+                taxonomy=taxonomy,
+                vault=FilesystemBackend(tmp_path),
+                gmail=MockGmail({"Benedict Evans": [item]}),
+                llm=MockLLM(analysis),
+                sync_state=SyncState(tmp_path / "sync.yaml"),
+                batch_provider=provider,
+                batch_state=batch_state,
+                no_wait=True,
+            )
+
+        assert submit().items_processed == 1
+        provider.requests = []
+        report = submit()
+        assert report.items_processed == 0
+        assert provider.requests == []
+        assert len(batch_state.get_pending()) == 1

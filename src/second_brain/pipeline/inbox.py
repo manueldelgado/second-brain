@@ -18,7 +18,12 @@ from second_brain.pipeline.base import (
     render_note,
     sanitize_filename,
 )
-from second_brain.pipeline.batch_state import BatchStateManager, PendingBatch, PendingBatchItem
+from second_brain.pipeline.batch_state import (
+    BatchStateManager,
+    PendingBatch,
+    PendingBatchItem,
+    drop_already_pending,
+)
 from second_brain.pipeline.newsletter import _poll_until_complete
 from second_brain.vault.base import VaultBackend
 from second_brain.vault.scanner import scan_inbox
@@ -131,6 +136,8 @@ def _run_batch(
 
     items = scan_inbox(vault, settings.vault.inbox_folder)
     logger.info("Found %d items in inbox", len(items))
+    # Items stay in the inbox until their batch is finalized — don't resubmit them.
+    items = drop_already_pending(items, batch_state, "inbox")
 
     if not items:
         report.log_summary()
@@ -291,6 +298,14 @@ def _write_inbox_item(
             item.title,
         )
 
+    # The clipping keeps its own filename; it is rewritten in place, then moved
+    original_path = Path(item.metadata["original_path"])
+    if not original_path.exists():
+        # Already moved by an earlier batch — rewriting it would recreate the
+        # clipping and move a duplicate into Notes.
+        logger.warning("  '%s' is no longer in the inbox — skipping", original_path.name)
+        return False
+
     if item.metadata.get("is_pdf", False):
         return _process_pdf_item(item, analysis, vault, settings, tags, status, dry_run)
 
@@ -299,8 +314,6 @@ def _write_inbox_item(
     template_name = TEMPLATE_MAP.get(fm.type, "clipping.md.j2")
     rendered = render_note(template_name, fm, analysis, item.content)
 
-    # The clipping keeps its own filename; it is rewritten in place, then moved
-    original_path = Path(item.metadata["original_path"])
 
     if dry_run:
         logger.info(

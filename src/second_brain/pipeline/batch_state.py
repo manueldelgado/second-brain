@@ -7,6 +7,7 @@ finalizes any that are complete, and removes them from the file.
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,10 +17,36 @@ import yaml
 
 from second_brain.models import IngestItem
 
+logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Domain types
 # ---------------------------------------------------------------------------
+
+def item_key(item: IngestItem) -> str | None:
+    """Stable identity of an item across runs: Gmail message ID or inbox file path.
+
+    Used to avoid re-submitting items that are already in a pending batch — the
+    sync state and the inbox only advance when a batch is finalized, so a submit
+    that runs before then would otherwise collect the same items again.
+    """
+    return item.metadata.get("message_id") or item.metadata.get("original_path")
+
+
+def drop_already_pending(
+    items: list[IngestItem], batch_state: BatchStateManager | None, pipeline: str
+) -> list[IngestItem]:
+    """Return *items* minus those already submitted in a pending *pipeline* batch."""
+    if batch_state is None:
+        return items
+    pending = batch_state.pending_item_keys(pipeline)
+    kept = [i for i in items if item_key(i) not in pending]
+    for i in items:
+        if item_key(i) in pending:
+            logger.info("  Already in a pending batch, skipping: %s", i.title)
+    return kept
+
 
 class PendingBatchItem:
     """Metadata for a single item within a pending batch."""
@@ -106,6 +133,8 @@ class BatchStateManager:
 
     def add_batch(self, batch: PendingBatch) -> None:
         """Persist a newly submitted batch."""
+        # Reload first: another process (e.g. resume-batch) may have changed the file.
+        self._batches = self._load()
         self._batches[batch.batch_id] = batch
         self._save()
 
@@ -121,9 +150,22 @@ class BatchStateManager:
 
     def remove_batch(self, batch_id: str) -> None:
         """Remove a finalized (or cancelled/errored) batch from the state."""
+        # Reload first so batches added by a concurrent submit are not dropped.
+        self._batches = self._load()
         if batch_id in self._batches:
             del self._batches[batch_id]
             self._save()
+
+    def pending_item_keys(self, pipeline: str) -> set[str]:
+        """Keys (see :func:`item_key`) of all items in *pipeline*'s pending batches."""
+        self._batches = self._load()
+        return {
+            key
+            for b in self._batches.values()
+            if b.pipeline == pipeline and not b.is_expired
+            for i in b.items
+            if (key := item_key(i.item))
+        }
 
     def all_batch_ids(self) -> list[str]:
         return list(self._batches.keys())

@@ -525,3 +525,74 @@ class TestRunInboxPipeline:
         assert report.items_processed == 0
         assert report.items_created == 0
         assert len(report.errors) == 0
+
+
+class FakeBatchProvider:
+    def __init__(self, analysis: ContentAnalysis) -> None:
+        self.analysis = analysis
+        self.submitted: list[list] = []
+
+    def submit_batch(self, requests):
+        self.submitted.append(requests)
+        return f"batch_{len(self.submitted)}"
+
+    def get_batch_results(self, batch_id):
+        from second_brain.llm.batch import BatchResult
+
+        requests = self.submitted[int(batch_id.split("_")[1]) - 1]
+        return [BatchResult(custom_id=r.custom_id, analysis=self.analysis) for r in requests]
+
+
+_CLIPPING = "---\ntitle: Test Article\nsource: https://example.com\nstatus: inbox\n---\n\nBody text.\n"
+
+
+class TestNoDuplicateBatches:
+    def test_second_submit_skips_items_in_pending_batch(
+        self, tmp_path, settings, taxonomy, analysis
+    ) -> None:
+        from second_brain.pipeline.batch_state import BatchStateManager
+
+        vault = FilesystemBackend(tmp_path)
+        _seed_inbox_note(vault, "Test Article.md", _CLIPPING)
+        batch_state = BatchStateManager(tmp_path / "batch_state.yaml")
+        provider = FakeBatchProvider(analysis)
+
+        for _ in range(2):
+            run_inbox_pipeline(
+                settings=settings, taxonomy=taxonomy, vault=vault, llm=MockLLM(analysis),
+                batch_provider=provider, batch_state=batch_state, no_wait=True,
+            )
+
+        assert len(provider.submitted) == 1
+        assert len(batch_state.get_pending()) == 1
+
+    def test_finalizing_an_already_moved_item_does_not_duplicate(
+        self, tmp_path, settings, taxonomy, analysis
+    ) -> None:
+        """Two batches holding the same clipping (e.g. submitted before this fix)
+        must produce one note, not 'Title.md' + 'Title 1.md'."""
+        from second_brain.pipeline.inbox import finalize_inbox_batch
+        from second_brain.pipeline.batch_state import BatchStateManager
+
+        vault = FilesystemBackend(tmp_path)
+        _seed_inbox_note(vault, "Test Article.md", _CLIPPING)
+        provider = FakeBatchProvider(analysis)
+        # Separate state files simulate two submits that did not see each other
+        for n in (1, 2):
+            run_inbox_pipeline(
+                settings=settings, taxonomy=taxonomy, vault=vault, llm=MockLLM(analysis),
+                batch_provider=provider,
+                batch_state=BatchStateManager(tmp_path / f"state{n}.yaml"), no_wait=True,
+            )
+
+        outcomes = []
+        for n in (1, 2):
+            pending = BatchStateManager(tmp_path / f"state{n}.yaml").get_pending()[0]
+            outcomes.append(finalize_inbox_batch(
+                results=provider.get_batch_results(pending.batch_id), pending=pending,
+                vault=vault, settings=settings, taxonomy=taxonomy, dry_run=False,
+            ))
+
+        assert outcomes == [(1, 0, []), (0, 1, [])]
+        assert [p.name for p in (tmp_path / "01 Notes").iterdir()] == ["Test Article.md"]
+        assert not (tmp_path / "00 Inbox" / "Test Article.md").exists()

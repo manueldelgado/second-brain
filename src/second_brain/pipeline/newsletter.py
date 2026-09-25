@@ -18,7 +18,12 @@ from second_brain.pipeline.base import (
     render_note,
     sanitize_filename,
 )
-from second_brain.pipeline.batch_state import BatchStateManager, PendingBatch, PendingBatchItem
+from second_brain.pipeline.batch_state import (
+    BatchStateManager,
+    PendingBatch,
+    PendingBatchItem,
+    drop_already_pending,
+)
 from second_brain.vault.base import VaultBackend
 from second_brain.vault.sync_state import SyncState
 
@@ -179,6 +184,10 @@ def _run_batch(
             logger.info("  Collected %d items from %s", len(items), source.name)
         else:
             logger.info("  No new emails for %s", source.name)
+
+    # Sync state only advances when a batch is finalized, so emails from a batch
+    # that is still pending are fetched again — don't submit them twice.
+    all_items = drop_already_pending(all_items, batch_state, "newsletters")
 
     if not all_items:
         logger.info("No items to process.")
