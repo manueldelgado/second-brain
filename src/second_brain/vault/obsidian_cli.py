@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
+
+from second_brain.vault.safe_io import (
+    copy_no_clobber,
+    free_path,
+    move_no_clobber,
+    rewrite,
+    write_new,
+)
 
 
 class ObsidianCLIBackend:
@@ -30,11 +37,10 @@ class ObsidianCLIBackend:
 
     def create_note(self, folder: str, filename: str, content: str) -> Path:
         # Write directly — CLI create is for template-based creation
-        dest_dir = self.vault_root / folder
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        path = dest_dir / filename
-        path.write_text(content, encoding="utf-8")
-        return path
+        return write_new(self.vault_root / folder, filename, content)
+
+    def update_note(self, path: Path, content: str) -> None:
+        rewrite(path, content)
 
     def read_note(self, path: Path) -> str:
         return path.read_text(encoding="utf-8")
@@ -42,17 +48,16 @@ class ObsidianCLIBackend:
     def move_note(self, source: Path, dest_folder: str) -> Path:
         """Move note via CLI — automatically updates wikilinks across the vault."""
         rel_source = source.relative_to(self.vault_root)
-        dest = Path(dest_folder) / source.name
+        # The CLI creates the file itself, so pick a free name up front
+        dest = free_path(self.vault_root / dest_folder, source.name).relative_to(
+            self.vault_root
+        )
         try:
             self._run_cli("move", str(rel_source), str(dest))
             return self.vault_root / dest
         except (subprocess.CalledProcessError, FileNotFoundError):
             # Fallback to filesystem move if CLI is unavailable
-            dest_dir = self.vault_root / dest_folder
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest_path = dest_dir / source.name
-            shutil.move(str(source), str(dest_path))
-            return dest_path
+            return move_no_clobber(source, self.vault_root / dest_folder)
 
     def list_folder(self, folder: str) -> list[Path]:
         folder_path = self.vault_root / folder
@@ -61,8 +66,4 @@ class ObsidianCLIBackend:
         return sorted(folder_path.iterdir())
 
     def copy_asset(self, source: Path, dest_folder: str) -> Path:
-        dest_dir = self.vault_root / dest_folder
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / source.name
-        shutil.copy2(str(source), str(dest))
-        return dest
+        return copy_no_clobber(source, self.vault_root / dest_folder)

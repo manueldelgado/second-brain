@@ -185,6 +185,39 @@ class TestRunNewsletterPipeline:
         assert "AI Weekly #1" in content
         assert "AI News" in content
 
+    def test_duplicate_subject_does_not_overwrite(
+        self,
+        tmp_path: Path,
+        settings: Settings,
+        newsletters: NewslettersConfig,
+        taxonomy: TaxonomyConfig,
+        analysis: ContentAnalysis,
+    ) -> None:
+        vault = FilesystemBackend(tmp_path)
+        existing = vault.create_note("01 Notes", "AI Weekly 1.md", "my edited note")
+
+        item = IngestItem(
+            source_type="gmail",
+            title="AI Weekly #1",
+            content="# AI News\nContent here",
+            newsletter_name="Benedict Evans",
+            metadata={"message_id": "msg1"},
+        )
+        report = run_newsletter_pipeline(
+            settings=settings,
+            newsletters=newsletters,
+            taxonomy=taxonomy,
+            vault=vault,
+            gmail=MockGmail({"Benedict Evans": [item]}),
+            llm=MockLLM(analysis),
+            sync_state=SyncState(tmp_path / "sync.yaml"),
+        )
+
+        assert report.items_created == 1
+        assert existing.read_text() == "my edited note"
+        new_note = tmp_path / "01 Notes" / "AI Weekly 1 1.md"
+        assert "AI News" in new_note.read_text()
+
     def test_dry_run_no_files_created(
         self,
         tmp_path: Path,

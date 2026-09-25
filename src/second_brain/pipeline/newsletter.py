@@ -348,8 +348,10 @@ def _write_newsletter_note(
         logger.info("  [DRY RUN] Would create: %s", filename)
         return
 
-    vault.create_note(settings.vault.notes_folder, filename, rendered)
-    logger.info("  Created: %s", filename)
+    path = vault.create_note(settings.vault.notes_folder, filename, rendered)
+    if path.name != filename:
+        logger.warning("  '%s' already exists — saved as '%s'", filename, path.name)
+    logger.info("  Created: %s", path.name)
 
     internal_date_iso = item.metadata.get("internal_date_iso")
     if internal_date_iso:

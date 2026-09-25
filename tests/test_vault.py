@@ -145,3 +145,76 @@ class TestObsidianCLIBackend:
         backend.create_note("folder", "b.md", "")
         files = backend.list_folder("folder")
         assert len(files) == 2
+
+
+@pytest.fixture(params=["filesystem", "obsidian_cli"])
+def backend(request, tmp_path: Path):
+    if request.param == "filesystem":
+        return FilesystemBackend(tmp_path)
+    from second_brain.vault.obsidian_cli import ObsidianCLIBackend
+
+    return ObsidianCLIBackend(tmp_path)
+
+
+class TestNoOverwrite:
+    """Vault writes must never replace an existing file."""
+
+    def test_create_note_keeps_existing(self, backend, tmp_path: Path) -> None:
+        first = backend.create_note("01 Notes", "Weekly.md", "first")
+        second = backend.create_note("01 Notes", "Weekly.md", "second")
+        third = backend.create_note("01 Notes", "Weekly.md", "third")
+
+        assert first.read_text() == "first"
+        assert second.name == "Weekly 1.md"
+        assert second.read_text() == "second"
+        assert third.name == "Weekly 2.md"
+
+    def test_move_note_keeps_existing(self, backend, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        existing = backend.create_note("01 Notes", "item.md", "keep me")
+        source = backend.create_note("00 Inbox", "item.md", "incoming")
+
+        # CLI unavailable → exercises the filesystem path for both backends
+        with patch("subprocess.run", side_effect=FileNotFoundError("obsidian not found")):
+            dest = backend.move_note(source, "01 Notes")
+
+        assert existing.read_text() == "keep me"
+        assert dest.name == "item 1.md"
+        assert dest.read_text() == "incoming"
+        assert not source.exists()
+
+    def test_copy_asset_keeps_existing(self, backend, tmp_path: Path) -> None:
+        assets = tmp_path / "04 Assets"
+        assets.mkdir()
+        (assets / "paper.pdf").write_bytes(b"old pdf")
+        source = tmp_path / "paper.pdf"
+        source.write_bytes(b"new pdf")
+
+        dest = backend.copy_asset(source, "04 Assets")
+
+        assert (assets / "paper.pdf").read_bytes() == b"old pdf"
+        assert dest.name == "paper 1.pdf"
+        assert dest.read_bytes() == b"new pdf"
+
+    def test_update_note_replaces_content_in_place(self, backend) -> None:
+        path = backend.create_note("00 Inbox", "item.md", "before")
+        backend.update_note(path, "after")
+        assert path.read_text() == "after"
+        assert [p.name for p in path.parent.iterdir()] == ["item.md"]  # no temp left behind
+
+
+def test_obsidian_cli_move_targets_free_name(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from second_brain.vault.obsidian_cli import ObsidianCLIBackend
+
+    backend = ObsidianCLIBackend(tmp_path)
+    backend.create_note("01 Notes", "item.md", "keep me")
+    source = backend.create_note("00 Inbox", "item.md", "incoming")
+
+    with patch("subprocess.run") as run:
+        dest = backend.move_note(source, "01 Notes")
+
+    assert run.call_args.args[0][-1] == str(Path("01 Notes") / "item 1.md")
+    assert dest == tmp_path / "01 Notes" / "item 1.md"

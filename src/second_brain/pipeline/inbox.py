@@ -299,8 +299,8 @@ def _write_inbox_item(
     template_name = TEMPLATE_MAP.get(fm.type, "clipping.md.j2")
     rendered = render_note(template_name, fm, analysis, item.content)
 
+    # The clipping keeps its own filename; it is rewritten in place, then moved
     original_path = Path(item.metadata["original_path"])
-    filename = sanitize_filename(fm.title)
 
     if dry_run:
         logger.info(
@@ -308,17 +308,19 @@ def _write_inbox_item(
             item.title,
             fm.type,
             status,
-            filename,
+            original_path.name,
         )
         return True
 
-    vault.create_note(original_path.parent.name, original_path.name, rendered)
-    vault.move_note(original_path, settings.vault.notes_folder)
+    vault.update_note(original_path, rendered)
+    dest = vault.move_note(original_path, settings.vault.notes_folder)
+    if dest.name != original_path.name:
+        logger.warning("  '%s' already exists — saved as '%s'", original_path.name, dest.name)
     logger.info(
         "  Classified: %s → %s/%s (%s)",
         item.title,
         settings.vault.notes_folder,
-        filename,
+        dest.name,
         status,
     )
     return True
@@ -341,7 +343,9 @@ def _process_pdf_item(
         logger.info("  [DRY RUN] Would process PDF: %s", pdf_filename)
         return True
 
-    vault.copy_asset(original_path, settings.vault.assets_folder)
+    asset = vault.copy_asset(original_path, settings.vault.assets_folder)
+    # The wrapper note must embed the asset under the name it actually got
+    pdf_filename = asset.name
 
     fm = NoteFrontmatter(
         title=item.title,
@@ -357,8 +361,10 @@ def _process_pdf_item(
     rendered = render_note(template_name, fm, analysis, "", extra={"pdf_filename": pdf_filename})
 
     note_filename = sanitize_filename(item.title)
-    vault.create_note(settings.vault.notes_folder, note_filename, rendered)
+    note_path = vault.create_note(settings.vault.notes_folder, note_filename, rendered)
     original_path.unlink()
+    if note_path.name != note_filename:
+        logger.warning("  '%s' already exists — saved as '%s'", note_filename, note_path.name)
 
     logger.info("  PDF processed: %s → wrapper note + asset (%s)", pdf_filename, status)
     return True

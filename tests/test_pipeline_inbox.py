@@ -268,6 +268,58 @@ class TestRunInboxPipeline:
         note_content = vault.read_note(notes[0])
         assert "research-paper.pdf" in note_content
 
+    def test_clipping_does_not_overwrite_existing_note(
+        self,
+        tmp_path: Path,
+        settings: Settings,
+        taxonomy: TaxonomyConfig,
+        analysis: ContentAnalysis,
+    ) -> None:
+        vault = FilesystemBackend(tmp_path)
+        existing = vault.create_note("01 Notes", "article.md", "my older note")
+        _seed_inbox_note(
+            vault,
+            "article.md",
+            "---\ntitle: Article\nstatus: inbox\n---\n\nNew clipping body.",
+        )
+
+        report = run_inbox_pipeline(
+            settings=settings, taxonomy=taxonomy, vault=vault, llm=MockLLM(analysis)
+        )
+
+        assert report.items_created == 1
+        assert existing.read_text() == "my older note"
+        moved = tmp_path / "01 Notes" / "article 1.md"
+        assert "New clipping body." in moved.read_text()
+        assert vault.list_folder("00 Inbox") == []
+
+    def test_pdf_does_not_overwrite_existing_asset_or_note(
+        self,
+        tmp_path: Path,
+        settings: Settings,
+        taxonomy: TaxonomyConfig,
+        analysis: ContentAnalysis,
+    ) -> None:
+        vault = FilesystemBackend(tmp_path)
+        assets = tmp_path / "04 Assets"
+        assets.mkdir()
+        (assets / "paper.pdf").write_bytes(b"older pdf")
+        existing_note = vault.create_note("01 Notes", "paper.md", "my older note")
+        inbox = tmp_path / "00 Inbox"
+        inbox.mkdir()
+        (inbox / "paper.pdf").write_bytes(b"new pdf")
+
+        report = run_inbox_pipeline(
+            settings=settings, taxonomy=taxonomy, vault=vault, llm=MockLLM(analysis)
+        )
+
+        assert report.items_created == 1
+        assert (assets / "paper.pdf").read_bytes() == b"older pdf"
+        assert (assets / "paper 1.pdf").read_bytes() == b"new pdf"
+        assert existing_note.read_text() == "my older note"
+        wrapper = (tmp_path / "01 Notes" / "paper 1.md").read_text()
+        assert "![[paper 1.pdf]]" in wrapper  # embeds the asset under its actual name
+
     def test_preserves_existing_frontmatter(
         self,
         tmp_path: Path,
