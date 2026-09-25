@@ -49,10 +49,28 @@ def render_note(
     return template.render(**context)
 
 
+# Emoji code points, plus the invisible joiners/modifiers that build compound
+# emoji (ZWJ sequences, skin tones, flags, keycaps). Text symbols such as
+# ©, ™, × and arrows are deliberately left alone.
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f000-\U0001faff"  # pictographs, emoticons, transport, flags, ...
+    "☀-➿"  # misc symbols + dingbats (☕ ✅ ✨ ❤)
+    "⌚⌛⌨⏏⏩-⏳⏸-⏺"  # ⌚ ⏰ ⏩ ...
+    "⬅-⬇⬛⬜⭐⭕"  # ⬅ ⬛ ⭐ ⭕
+    "〰〽㊗㊙"
+    "︎️‍⃣"  # variation selectors, ZWJ, keycap
+    "\U000e0020-\U000e007f"  # tag sequences (subdivision flags)
+    "]"
+)
+
+
 def sanitize_filename(title: str) -> str:
     """Convert a title to a safe filename for Obsidian."""
+    # Emoji are visual noise in note names
+    name = _EMOJI_RE.sub("", title)
     # Remove/replace characters that are problematic in filenames
-    name = re.sub(r'[<>:"/\\|?*]', "", title)
+    name = re.sub(r'[<>:"/\\|?*]', "", name)
     # Obsidian cannot link to names containing #, ^, [ or ]: a wikilink to
     # "#064 Title" is read as a heading link. Brackets become parentheses.
     name = name.replace("[", "(").replace("]", ")")
@@ -62,7 +80,7 @@ def sanitize_filename(title: str) -> str:
     # Truncate to reasonable length
     if len(name) > 200:
         name = name[:200].rsplit(" ", 1)[0]
-    return name + ".md"
+    return (name or "Untitled") + ".md"
 
 
 TEMPLATE_MAP = {
