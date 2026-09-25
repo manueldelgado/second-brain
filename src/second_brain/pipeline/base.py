@@ -53,6 +53,11 @@ def sanitize_filename(title: str) -> str:
     """Convert a title to a safe filename for Obsidian."""
     # Remove/replace characters that are problematic in filenames
     name = re.sub(r'[<>:"/\\|?*]', "", title)
+    # Obsidian cannot link to names containing #, ^, [ or ]: a wikilink to
+    # "#064 Title" is read as a heading link. Brackets become parentheses.
+    name = name.replace("[", "(").replace("]", ")")
+    name = re.sub(r"#(\d+)([^\W\d_])", r"\1 \2", name)  # "#64Invest" -> "64 Invest"
+    name = re.sub(r"[#^]", "", name)
     name = re.sub(r"\s+", " ", name).strip()
     # Truncate to reasonable length
     if len(name) > 200:
