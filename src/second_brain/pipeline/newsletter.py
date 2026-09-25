@@ -9,7 +9,7 @@ from pathlib import Path
 
 from second_brain.config import NewslettersConfig, Settings, TaxonomyConfig
 from second_brain.gmail.client import GmailClient  # also used as type in finalize_newsletter_batch
-from second_brain.llm.base import LLMProvider
+from second_brain.llm.base import LLMProvider, LLMUnavailableError
 from second_brain.llm.batch import BatchLLMProvider, BatchRequest, BatchResult
 from second_brain.models import ContentAnalysis, IngestItem, NoteFrontmatter
 from second_brain.pipeline.base import (
@@ -134,6 +134,8 @@ def _run_sync(
                 _apply_label_safe(gmail, item, label_id)
                 report.items_created += 1
                 source_created += 1
+            except LLMUnavailableError:
+                raise  # no point trying the other items; the CLI raises an alert
             except Exception as e:
                 report.errors.append(f"[{source.name}] {item.title}: {e}")
                 logger.exception("Failed to process: %s", item.title)

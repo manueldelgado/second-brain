@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from second_brain.config import Settings, TaxonomyConfig
 from second_brain.enrich import clean_url, fetch_article
-from second_brain.llm.base import LLMProvider
+from second_brain.llm.base import LLMProvider, LLMUnavailableError
 from second_brain.llm.batch import BatchLLMProvider, BatchRequest, BatchResult
 from second_brain.models import ContentAnalysis, IngestItem, NoteFrontmatter
 from second_brain.pipeline.base import (
@@ -110,6 +110,8 @@ def _run_sync(
                 report.items_created += 1
             else:
                 report.items_skipped += 1
+        except LLMUnavailableError:
+            raise  # no point trying the other items; the CLI raises an alert
         except Exception as e:
             report.errors.append(f"{item.title}: {e}")
             logger.exception("Failed to process inbox item: %s", item.title)

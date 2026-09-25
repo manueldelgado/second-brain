@@ -447,3 +447,33 @@ class TestNoResubmitWhilePending:
         assert report.items_processed == 0
         assert provider.requests == []
         assert len(batch_state.get_pending()) == 1
+
+
+class TestStopsWhenLLMUnavailable:
+    def test_first_unavailable_error_stops_the_run(
+        self, tmp_path, settings, newsletters, taxonomy
+    ) -> None:
+        from second_brain.llm.base import LLMUnavailableError
+
+        class LoggedOut:
+            calls = 0
+
+            def analyze_content(self, *args, **kwargs):
+                LoggedOut.calls += 1
+                raise LLMUnavailableError("Not logged in")
+
+        items = [
+            IngestItem(source_type="gmail", title=f"Issue {i}", content="Body",
+                       newsletter_name="Benedict Evans",
+                       metadata={"message_id": f"m{i}", "internal_date_iso": "2026-03-07T12:00:00+00:00"})
+            for i in range(3)
+        ]
+        sync_state = SyncState(tmp_path / "sync.yaml")
+        with pytest.raises(LLMUnavailableError):
+            run_newsletter_pipeline(
+                settings=settings, newsletters=newsletters, taxonomy=taxonomy,
+                vault=FilesystemBackend(tmp_path), gmail=MockGmail({"Benedict Evans": items}),
+                llm=LoggedOut(), sync_state=sync_state,
+            )
+        assert LoggedOut.calls == 1
+        assert sync_state.get_last_sync("Benedict Evans") is None  # emails are retried next run

@@ -21,3 +21,15 @@ class LLMProvider(Protocol):
     ) -> ContentAnalysis:
         """Analyze content and return structured classification + summary."""
         ...
+
+
+class LLMUnavailableError(RuntimeError):
+    """The provider cannot serve *any* request (logged out, plan limit, missing CLI).
+
+    Pipelines stop the run instead of failing every remaining item; the CLI turns
+    it into an alert note in the vault. *hint* tells the user how to fix it.
+    """
+
+    def __init__(self, message: str, hint: str = "") -> None:
+        super().__init__(message)
+        self.hint = hint

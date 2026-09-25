@@ -33,7 +33,7 @@ class BatchConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: str = "claude"
+    provider: Literal["claude", "claude_cli"] = "claude"  # claude_cli: local `claude -p`, subscription-billed
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 4096
     # Omitted from requests when None (Haiku 4.5 rejects `effort`).

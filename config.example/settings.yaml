@@ -9,6 +9,10 @@ vault:
 vault_backend: "filesystem"            # "filesystem" (default) or "obsidian_cli"
 
 llm:
+  # "claude": Anthropic API (ANTHROPIC_API_KEY, pay per token; supports --batch).
+  # "claude_cli": local `claude -p`, billed to the Claude subscription it is logged in
+  #   with (the API key is never passed to it). Synchronous only; `effort` applies,
+  #   `max_tokens`, `thinking` and `batch` are ignored.
   provider: "claude"
   model: "claude-haiku-4-5-20251001"   # See console.anthropic.com for available models
   max_tokens: 2048
