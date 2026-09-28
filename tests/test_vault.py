@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -160,14 +161,22 @@ class TestNoOverwrite:
     """Vault writes must never replace an existing file."""
 
     def test_create_note_keeps_existing(self, backend, tmp_path: Path) -> None:
-        first = backend.create_note("01 Notes", "Weekly.md", "first")
-        second = backend.create_note("01 Notes", "Weekly.md", "second")
-        third = backend.create_note("01 Notes", "Weekly.md", "third")
+        published = date(2026, 3, 14)
+        first = backend.create_note("01 Notes", "Weekly.md", "first", published)
+        second = backend.create_note("01 Notes", "Weekly.md", "second", published)
+        third = backend.create_note("01 Notes", "Weekly.md", "third", published)
+        fourth = backend.create_note("01 Notes", "Weekly.md", "fourth", published)
 
         assert first.read_text() == "first"
-        assert second.name == "Weekly 1.md"
+        assert second.name == "Weekly (2026-03-14).md"
         assert second.read_text() == "second"
-        assert third.name == "Weekly 2.md"
+        assert third.name == "Weekly (2026-03-14) 1.md"  # same date too → numbered
+        assert fourth.name == "Weekly (2026-03-14) 2.md"
+
+    def test_create_note_without_date_uses_today(self, backend) -> None:
+        backend.create_note("01 Notes", "Weekly.md", "first")
+        second = backend.create_note("01 Notes", "Weekly.md", "second")
+        assert second.name == f"Weekly ({date.today().isoformat()}).md"
 
     def test_move_note_keeps_existing(self, backend, tmp_path: Path) -> None:
         from unittest.mock import patch
@@ -180,7 +189,7 @@ class TestNoOverwrite:
             dest = backend.move_note(source, "01 Notes")
 
         assert existing.read_text() == "keep me"
-        assert dest.name == "item 1.md"
+        assert dest.name == f"item ({date.today().isoformat()}).md"
         assert dest.read_text() == "incoming"
         assert not source.exists()
 
@@ -194,7 +203,7 @@ class TestNoOverwrite:
         dest = backend.copy_asset(source, "04 Assets")
 
         assert (assets / "paper.pdf").read_bytes() == b"old pdf"
-        assert dest.name == "paper 1.pdf"
+        assert dest.name == f"paper ({date.today().isoformat()}).pdf"
         assert dest.read_bytes() == b"new pdf"
 
     def test_update_note_replaces_content_in_place(self, backend) -> None:
@@ -214,7 +223,23 @@ def test_obsidian_cli_move_targets_free_name(tmp_path: Path) -> None:
     source = backend.create_note("00 Inbox", "item.md", "incoming")
 
     with patch("subprocess.run") as run:
-        dest = backend.move_note(source, "01 Notes")
+        dest = backend.move_note(source, "01 Notes", date(2026, 3, 14))
 
-    assert run.call_args.args[0][-1] == str(Path("01 Notes") / "item 1.md")
-    assert dest == tmp_path / "01 Notes" / "item 1.md"
+    assert run.call_args.args[0][-1] == str(Path("01 Notes") / "item (2026-03-14).md")
+    assert dest == tmp_path / "01 Notes" / "item (2026-03-14).md"
+
+
+def test_obsidian_cli_vault_name_defaults_to_folder_name(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from second_brain.config import VaultConfig
+    from second_brain.vault.obsidian_cli import ObsidianCLIBackend
+
+    root = tmp_path / "My Vault"
+    assert VaultConfig(root=root).vault_name == "My Vault"
+    assert VaultConfig(root=root, name="Work").vault_name == "Work"
+
+    backend = ObsidianCLIBackend(root)
+    with patch("subprocess.run") as run:
+        backend._run_cli("move", "a.md", "b.md")
+    assert run.call_args.args[0][1] == 'vault="My Vault"'

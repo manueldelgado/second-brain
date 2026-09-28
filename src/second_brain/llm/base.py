@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from second_brain.config import TaxonomyConfig
+from second_brain.errors import BlockingError
 from second_brain.models import ContentAnalysis
 
 
@@ -23,13 +24,7 @@ class LLMProvider(Protocol):
         ...
 
 
-class LLMUnavailableError(RuntimeError):
-    """The provider cannot serve *any* request (logged out, plan limit, missing CLI).
+class LLMUnavailableError(BlockingError):
+    """The LLM provider cannot serve any request (logged out, plan limit, missing CLI)."""
 
-    Pipelines stop the run instead of failing every remaining item; the CLI turns
-    it into an alert note in the vault. *hint* tells the user how to fix it.
-    """
-
-    def __init__(self, message: str, hint: str = "") -> None:
-        super().__init__(message)
-        self.hint = hint
+    component = "Claude"

@@ -302,3 +302,43 @@ class TestFetchNewslettersFiltering:
             "noreply@wp.com", "Test", date(2026, 3, 1), sender_name="Alice Blog",
         )
         assert len(items) == 0
+
+
+class TestUnattendedAuth:
+    """Without a terminal, Gmail auth problems must raise, never wait on a browser."""
+
+    def _client(self, tmp_path, interactive):
+        from second_brain.gmail.client import GmailClient
+
+        return GmailClient(tmp_path / "creds.json", tmp_path / "token.json", interactive=interactive)
+
+    def test_missing_token_raises_instead_of_opening_browser(self, tmp_path, monkeypatch) -> None:
+        import google_auth_oauthlib.flow as flow_mod
+
+        from second_brain.errors import GmailAuthError
+
+        monkeypatch.setattr(flow_mod.InstalledAppFlow, "from_client_secrets_file",
+                            lambda *a, **k: pytest.fail("browser flow started unattended"))
+        with pytest.raises(GmailAuthError, match="No valid Gmail authorization") as exc_info:
+            self._client(tmp_path, interactive=False).service
+        assert "gmail login" in exc_info.value.hint
+
+    def test_revoked_refresh_token_raises(self, tmp_path, monkeypatch) -> None:
+        import json
+
+        from google.auth.exceptions import RefreshError
+        from google.oauth2.credentials import Credentials
+
+        from second_brain.errors import GmailAuthError
+
+        (tmp_path / "token.json").write_text(json.dumps({
+            "token": "old", "refresh_token": "r", "client_id": "c", "client_secret": "s",
+            "expiry": "2020-01-01T00:00:00Z",
+        }))
+
+        def revoked(self, request):
+            raise RefreshError("invalid_grant: Token has been expired or revoked.")
+
+        monkeypatch.setattr(Credentials, "refresh", revoked)
+        with pytest.raises(GmailAuthError, match="expired or was revoked"):
+            self._client(tmp_path, interactive=False).service

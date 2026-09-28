@@ -8,8 +8,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from second_brain.config import NewslettersConfig, Settings, TaxonomyConfig
+from second_brain.errors import BlockingError
 from second_brain.gmail.client import GmailClient  # also used as type in finalize_newsletter_batch
-from second_brain.llm.base import LLMProvider, LLMUnavailableError
+from second_brain.llm.base import LLMProvider
 from second_brain.llm.batch import BatchLLMProvider, BatchRequest, BatchResult
 from second_brain.models import ContentAnalysis, IngestItem, NoteFrontmatter
 from second_brain.pipeline.base import (
@@ -108,6 +109,8 @@ def _run_sync(
                 source.email, source.name, after_date, min_internal_date,
                 sender_name=source.sender_name,
             )
+        except BlockingError:
+            raise  # e.g. Gmail authorization revoked — every source would fail
         except Exception as e:
             report.errors.append(f"Gmail fetch failed for {source.name}: {e}")
             continue
@@ -134,7 +137,7 @@ def _run_sync(
                 _apply_label_safe(gmail, item, label_id)
                 report.items_created += 1
                 source_created += 1
-            except LLMUnavailableError:
+            except BlockingError:
                 raise  # no point trying the other items; the CLI raises an alert
             except Exception as e:
                 report.errors.append(f"[{source.name}] {item.title}: {e}")
@@ -178,6 +181,8 @@ def _run_batch(
                 source.email, source.name, after_date, min_internal_date,
                 sender_name=source.sender_name,
             )
+        except BlockingError:
+            raise  # e.g. Gmail authorization revoked — every source would fail
         except Exception as e:
             report.errors.append(f"Gmail fetch failed for {source.name}: {e}")
             continue
@@ -359,7 +364,7 @@ def _write_newsletter_note(
         logger.info("  [DRY RUN] Would create: %s", filename)
         return
 
-    path = vault.create_note(settings.vault.notes_folder, filename, rendered)
+    path = vault.create_note(settings.vault.notes_folder, filename, rendered, item.published)
     if path.name != filename:
         logger.warning("  '%s' already exists — saved as '%s'", filename, path.name)
     logger.info("  Created: %s", path.name)

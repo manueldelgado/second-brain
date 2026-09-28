@@ -1,5 +1,7 @@
 vault:
   root: "~/Documents/MyVault"           # Path to your Obsidian vault
+  # name: "MyVault"                     # Vault name in Obsidian (for vault_backend: obsidian_cli);
+                                        # defaults to the root folder's name
   inbox_folder: "00 Inbox"
   notes_folder: "01 Notes"
   assets_folder: "04 Assets"
@@ -33,3 +35,7 @@ gmail:
 processing:
   default_lookback_days: 7    # How far back to fetch for new/unknown newsletter sources
   dry_run: false
+  # Inbox: re-fetch each clipping's source URL to recover the full article and missing
+  # author/date. The captured text is only replaced if the fetched one is longer.
+  enrich_from_web: true
+  web_fetch_timeout_seconds: 20  # Per-URL download timeout

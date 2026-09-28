@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+logger = logging.getLogger(__name__)
+
 
 def _setup_logging(verbose: bool) -> None:
     level = logging.DEBUG if verbose else logging.INFO
@@ -35,7 +37,7 @@ def _build_vault(settings):
     from second_brain.vault.obsidian_cli import ObsidianCLIBackend
 
     if settings.vault_backend == "obsidian_cli":
-        return ObsidianCLIBackend(settings.vault.root)
+        return ObsidianCLIBackend(settings.vault.root, settings.vault.vault_name)
     return FilesystemBackend(settings.vault.root)
 
 
@@ -56,26 +58,39 @@ def _build_llm(settings):
 
 
 @contextmanager
-def _alert_on_unavailable_llm(settings, command: str, dry_run: bool):
-    """Turn LLMUnavailableError into an alert note in the vault; clear it once a run works.
+def _monitored_run(settings, command: str, dry_run: bool, components: tuple[str, ...]):
+    """Make an unattended pipeline run visible in the vault (see ``alerts.py``).
 
-    Only the local CLI provider can raise it today (logged out, plan limit), and
-    building that provider checks the login, so reaching the end of the block
-    means the problem — if there was one — is gone.
+    Yields a dict; the command stores its PipelineReport under ``"report"``.
+    A BlockingError becomes an alert note for its component and a failed
+    command. A run that completes updates the status note and clears the alerts
+    of the *components* it exercised: "Gmail" (the newsletters run fetches from
+    it), "Claude" (building the CLI provider checks its login).
     """
-    from second_brain.alerts import clear_alert, raise_alert
-    from second_brain.llm.base import LLMUnavailableError
+    from second_brain.alerts import clear_alert, raise_alert, record_run
+    from second_brain.errors import BlockingError
 
-    alert_folder = Path(settings.vault.root) / settings.vault.notes_folder
-
+    folder = Path(settings.vault.root) / settings.vault.notes_folder
+    run: dict = {}
     try:
-        yield
-    except LLMUnavailableError as exc:
+        yield run
+    except BlockingError as exc:
         if not dry_run:
-            raise_alert(alert_folder, str(exc), exc.hint, command)
+            raise_alert(folder, exc.component, str(exc), exc.hint, command)
         raise click.ClickException(f"{exc}\n{exc.hint}") from exc
-    if not dry_run and settings.llm.provider == "claude_cli":
-        clear_alert(alert_folder)
+    if dry_run:
+        return
+    for component in components:
+        if component != "Claude" or settings.llm.provider == "claude_cli":
+            clear_alert(folder, component)
+    report = run.get("report")
+    if report is not None:
+        record_run(
+            folder,
+            command,
+            f"{report.items_processed} processed, {report.items_created} created",
+            len(report.errors),
+        )
 
 
 def _check_batch_supported(settings, batch: bool) -> None:
@@ -97,13 +112,14 @@ def _build_batch_provider(settings):
     )
 
 
-def _build_gmail(settings):
+def _build_gmail(settings, interactive: bool | None = None):
     from second_brain.gmail.client import GmailClient
 
     return GmailClient(
         credentials_file=settings.gmail.credentials_file,
         token_file=settings.gmail.token_file,
         scopes=settings.gmail.scopes,
+        interactive=interactive,
     )
 
 
@@ -166,9 +182,10 @@ def newsletters(ctx: click.Context, dry_run: bool, verbose: bool, batch: bool, n
     batch_provider = _build_batch_provider(settings) if batch else None
     batch_state = _build_batch_state(settings) if batch else None
 
-    with _alert_on_unavailable_llm(settings, "newsletters", dry_run or settings.processing.dry_run):
+    dry_run = dry_run or settings.processing.dry_run
+    with _monitored_run(settings, "newsletters", dry_run, ("Gmail", "Claude")) as run:
         llm = _build_llm(settings)
-        run_newsletter_pipeline(
+        run["report"] = run_newsletter_pipeline(
             settings=settings,
             newsletters=nl_config,
             taxonomy=taxonomy,
@@ -176,7 +193,7 @@ def newsletters(ctx: click.Context, dry_run: bool, verbose: bool, batch: bool, n
             gmail=gmail,
             llm=llm,
             sync_state=sync_state,
-            dry_run=dry_run or settings.processing.dry_run,
+            dry_run=dry_run,
             batch_provider=batch_provider,
             batch_state=batch_state,
             no_wait=no_wait,
@@ -213,14 +230,15 @@ def inbox(ctx: click.Context, dry_run: bool, verbose: bool, batch: bool, no_wait
     batch_provider = _build_batch_provider(settings) if batch else None
     batch_state = _build_batch_state(settings) if batch else None
 
-    with _alert_on_unavailable_llm(settings, "inbox", dry_run or settings.processing.dry_run):
+    dry_run = dry_run or settings.processing.dry_run
+    with _monitored_run(settings, "inbox", dry_run, ("Claude",)) as run:
         llm = _build_llm(settings)
-        run_inbox_pipeline(
+        run["report"] = run_inbox_pipeline(
             settings=settings,
             taxonomy=taxonomy,
             vault=vault,
             llm=llm,
-            dry_run=dry_run or settings.processing.dry_run,
+            dry_run=dry_run,
             batch_provider=batch_provider,
             batch_state=batch_state,
             no_wait=no_wait,
@@ -241,7 +259,17 @@ def run(ctx: click.Context, dry_run: bool, verbose: bool, batch: bool, no_wait: 
     """Run both pipelines (newsletters + inbox)."""
     if verbose:
         _setup_logging(True)
-    ctx.invoke(newsletters, dry_run=dry_run, verbose=verbose, batch=batch, no_wait=no_wait)
+    from second_brain.llm.base import LLMUnavailableError
+
+    try:
+        ctx.invoke(newsletters, dry_run=dry_run, verbose=verbose, batch=batch, no_wait=no_wait)
+    except click.ClickException as exc:
+        # A Gmail problem shouldn't stop the inbox; a Claude one would block it too.
+        if isinstance(exc.__cause__, LLMUnavailableError):
+            raise
+        logger.error("Newsletters failed, continuing with inbox: %s", exc.message)
+        ctx.invoke(inbox, dry_run=dry_run, verbose=verbose, batch=batch, no_wait=no_wait)
+        raise
     ctx.invoke(inbox, dry_run=dry_run, verbose=verbose, batch=batch, no_wait=no_wait)
 
 
@@ -402,6 +430,28 @@ def batch_cancel(ctx: click.Context, batch_id: str) -> None:
 
 # ---------------------------------------------------------------------------
 # vault subcommand group
+# ---------------------------------------------------------------------------
+# gmail
+# ---------------------------------------------------------------------------
+
+@cli.group()
+def gmail() -> None:
+    """Gmail authorization."""
+
+
+@gmail.command("login")
+@click.pass_context
+def gmail_login(ctx: click.Context) -> None:
+    """Authorize Gmail access (opens a browser if the saved token is missing or revoked)."""
+    from second_brain.alerts import clear_alert
+
+    settings, _, _ = _load_all_config(ctx.obj["config_dir"])
+    client = _build_gmail(settings, interactive=True)
+    profile = client.service.users().getProfile(userId="me").execute()
+    click.echo(f"Gmail authorized for {profile['emailAddress']} (token: {settings.gmail.token_file})")
+    clear_alert(Path(settings.vault.root) / settings.vault.notes_folder, "Gmail")
+
+
 # ---------------------------------------------------------------------------
 
 @cli.group()

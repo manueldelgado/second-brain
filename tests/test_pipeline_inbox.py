@@ -289,7 +289,7 @@ class TestRunInboxPipeline:
 
         assert report.items_created == 1
         assert existing.read_text() == "my older note"
-        moved = tmp_path / "01 Notes" / "article 1.md"
+        moved = tmp_path / "01 Notes" / f"article ({date.today().isoformat()}).md"
         assert "New clipping body." in moved.read_text()
         assert vault.list_folder("00 Inbox") == []
 
@@ -315,10 +315,11 @@ class TestRunInboxPipeline:
 
         assert report.items_created == 1
         assert (assets / "paper.pdf").read_bytes() == b"older pdf"
-        assert (assets / "paper 1.pdf").read_bytes() == b"new pdf"
+        today = date.today().isoformat()
+        assert (assets / f"paper ({today}).pdf").read_bytes() == b"new pdf"
         assert existing_note.read_text() == "my older note"
-        wrapper = (tmp_path / "01 Notes" / "paper 1.md").read_text()
-        assert "![[paper 1.pdf]]" in wrapper  # embeds the asset under its actual name
+        wrapper = (tmp_path / "01 Notes" / f"paper ({today}).md").read_text()
+        assert f"![[paper ({today}).pdf]]" in wrapper  # embeds the asset under its actual name
 
     def test_preserves_existing_frontmatter(
         self,

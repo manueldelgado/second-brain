@@ -20,5 +20,4 @@ gmail:
 
 processing:
   default_lookback_days: 3
-  batch_size: 5
   dry_run: true

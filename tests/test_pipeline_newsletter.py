@@ -201,6 +201,7 @@ class TestRunNewsletterPipeline:
             title="AI Weekly #1",
             content="# AI News\nContent here",
             newsletter_name="Benedict Evans",
+            published=date(2026, 3, 14),
             metadata={"message_id": "msg1"},
         )
         report = run_newsletter_pipeline(
@@ -215,7 +216,7 @@ class TestRunNewsletterPipeline:
 
         assert report.items_created == 1
         assert existing.read_text() == "my edited note"
-        new_note = tmp_path / "01 Notes" / "AI Weekly 1 1.md"
+        new_note = tmp_path / "01 Notes" / "AI Weekly 1 (2026-03-14).md"  # publication date
         assert "AI News" in new_note.read_text()
 
     def test_dry_run_no_files_created(

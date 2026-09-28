@@ -15,6 +15,9 @@ from pydantic import BaseModel, field_validator
 
 class VaultConfig(BaseModel):
     root: Path
+    # Obsidian's name for the vault (used by the obsidian_cli backend);
+    # defaults to the vault folder's name, which is what Obsidian uses too.
+    name: str | None = None
     inbox_folder: str = "00 Inbox"
     notes_folder: str = "01 Notes"
     assets_folder: str = "04 Assets"
@@ -25,6 +28,10 @@ class VaultConfig(BaseModel):
     @classmethod
     def expand_root(cls, v: str) -> Path:
         return Path(v).expanduser()
+
+    @property
+    def vault_name(self) -> str:
+        return self.name or self.root.name
 
 
 class BatchConfig(BaseModel):
@@ -52,10 +59,13 @@ class GmailConfig(BaseModel):
     def expand_paths(cls, v: str) -> Path:
         return Path(v).expanduser()
 
+    @property
+    def vault_name(self) -> str:
+        return self.name or self.root.name
+
 
 class ProcessingConfig(BaseModel):
     default_lookback_days: int = 7
-    batch_size: int = 10
     dry_run: bool = False
     # Inbox enrichment: re-fetch the source URL to recover the full article text
     # and metadata (author, date) that the web clipper may have missed.

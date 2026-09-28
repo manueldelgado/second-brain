@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import base64
 import logging
+import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from markdownify import markdownify
 import trafilatura
 
+from second_brain.errors import GmailAuthError
 from second_brain.models import IngestItem
 
 logger = logging.getLogger(__name__)
+
+_REAUTH_HINT = (
+    "Re-authorize Gmail: run `second-brain gmail login` in a terminal (in the project "
+    "directory); a browser window opens to grant access."
+)
 
 
 def _extract_display_name(msg: dict) -> str:
@@ -36,10 +43,14 @@ class GmailClient:
         credentials_file: Path,
         token_file: Path,
         scopes: list[str] | None = None,
+        interactive: bool | None = None,
     ) -> None:
         self.credentials_file = credentials_file
         self.token_file = token_file
         self.scopes = scopes or ["https://www.googleapis.com/auth/gmail.readonly"]
+        # The browser consent flow needs a person; unattended runs (launchd, no
+        # terminal) would wait on it forever and block every later run.
+        self.interactive = sys.stdin.isatty() if interactive is None else interactive
         self._service = None
 
     @property
@@ -50,6 +61,7 @@ class GmailClient:
         return self._service
 
     def _build_service(self):
+        from google.auth.exceptions import RefreshError
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
@@ -61,8 +73,19 @@ class GmailClient:
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                except RefreshError as exc:  # refresh token revoked or expired
+                    if not self.interactive:
+                        raise GmailAuthError(
+                            f"Gmail authorization expired or was revoked: {exc}", hint=_REAUTH_HINT
+                        ) from exc
+                    creds = None
+            if not creds or not creds.valid:
+                if not self.interactive:
+                    raise GmailAuthError(
+                        f"No valid Gmail authorization ({self.token_file})", hint=_REAUTH_HINT
+                    )
                 flow = InstalledAppFlow.from_client_secrets_file(
                     str(self.credentials_file), self.scopes
                 )

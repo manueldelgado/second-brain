@@ -62,7 +62,6 @@ def _full_settings() -> dict:
         },
         "processing": {
             "default_lookback_days": 14,
-            "batch_size": 20,
             "dry_run": True,
         },
     }
@@ -119,7 +118,6 @@ class TestLoadSettings:
 
         assert settings.llm.max_tokens == 8192
         assert settings.processing.dry_run is True
-        assert settings.processing.batch_size == 20
         assert settings.processing.default_lookback_days == 14
 
     def test_defaults_for_llm(self, tmp_path: Path) -> None:
@@ -135,7 +133,6 @@ class TestLoadSettings:
         settings = load_settings(tmp_path)
 
         assert settings.processing.default_lookback_days == 7
-        assert settings.processing.batch_size == 10
         assert settings.processing.dry_run is False
 
 

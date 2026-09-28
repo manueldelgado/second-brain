@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import date
 from pathlib import Path
 
 from second_brain.vault.safe_io import (
@@ -22,9 +23,9 @@ class ObsidianCLIBackend:
     direct I/O for simple reads/writes.
     """
 
-    def __init__(self, vault_root: Path, vault_name: str = "Personal") -> None:
+    def __init__(self, vault_root: Path, vault_name: str | None = None) -> None:
         self.vault_root = vault_root
-        self.vault_name = vault_name
+        self.vault_name = vault_name or vault_root.name
 
     def _run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         cmd = ["obsidian", f'vault="{self.vault_name}"', *args]
@@ -35,9 +36,11 @@ class ObsidianCLIBackend:
             check=True,
         )
 
-    def create_note(self, folder: str, filename: str, content: str) -> Path:
+    def create_note(
+        self, folder: str, filename: str, content: str, when: date | None = None
+    ) -> Path:
         # Write directly — CLI create is for template-based creation
-        return write_new(self.vault_root / folder, filename, content)
+        return write_new(self.vault_root / folder, filename, content, when)
 
     def update_note(self, path: Path, content: str) -> None:
         rewrite(path, content)
@@ -45,11 +48,11 @@ class ObsidianCLIBackend:
     def read_note(self, path: Path) -> str:
         return path.read_text(encoding="utf-8")
 
-    def move_note(self, source: Path, dest_folder: str) -> Path:
+    def move_note(self, source: Path, dest_folder: str, when: date | None = None) -> Path:
         """Move note via CLI — automatically updates wikilinks across the vault."""
         rel_source = source.relative_to(self.vault_root)
         # The CLI creates the file itself, so pick a free name up front
-        dest = free_path(self.vault_root / dest_folder, source.name).relative_to(
+        dest = free_path(self.vault_root / dest_folder, source.name, when).relative_to(
             self.vault_root
         )
         try:
@@ -57,7 +60,7 @@ class ObsidianCLIBackend:
             return self.vault_root / dest
         except (subprocess.CalledProcessError, FileNotFoundError):
             # Fallback to filesystem move if CLI is unavailable
-            return move_no_clobber(source, self.vault_root / dest_folder)
+            return move_no_clobber(source, self.vault_root / dest_folder, when)
 
     def list_folder(self, folder: str) -> list[Path]:
         folder_path = self.vault_root / folder
@@ -65,5 +68,5 @@ class ObsidianCLIBackend:
             return []
         return sorted(folder_path.iterdir())
 
-    def copy_asset(self, source: Path, dest_folder: str) -> Path:
-        return copy_no_clobber(source, self.vault_root / dest_folder)
+    def copy_asset(self, source: Path, dest_folder: str, when: date | None = None) -> Path:
+        return copy_no_clobber(source, self.vault_root / dest_folder, when)
