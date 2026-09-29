@@ -21,6 +21,11 @@ _REAUTH_HINT = (
     "directory); a browser window opens to grant access."
 )
 
+# Retries (exponential backoff, googleapiclient's own) for the label calls on
+# connection resets, 429 and 5xx; a failed label is otherwise never retried,
+# since sync state has already moved past the email. Only idempotent requests.
+_LABEL_RETRIES = 4
+
 
 def _extract_display_name(msg: dict) -> str:
     """Extract the display name from a Gmail message's From header.
@@ -107,7 +112,11 @@ class GmailClient:
         if name in self._label_cache:
             return self._label_cache[name]
 
-        labels = self.service.users().labels().list(userId="me").execute().get("labels", [])
+        labels = (
+            self.service.users().labels().list(userId="me")
+            .execute(num_retries=_LABEL_RETRIES)
+            .get("labels", [])
+        )
         for label in labels:
             self._label_cache[label["name"]] = label["id"]
 
@@ -126,7 +135,7 @@ class GmailClient:
             userId="me",
             id=message_id,
             body={"addLabelIds": [label_id]},
-        ).execute()
+        ).execute(num_retries=_LABEL_RETRIES)
 
     def search_emails(
         self,

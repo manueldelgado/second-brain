@@ -342,3 +342,39 @@ class TestUnattendedAuth:
         monkeypatch.setattr(Credentials, "refresh", revoked)
         with pytest.raises(GmailAuthError, match="expired or was revoked"):
             self._client(tmp_path, interactive=False).service
+
+
+class TestLabelRetries:
+    def _client_with_responses(self, gmail_client: GmailClient, responses: list) -> GmailClient:
+        from googleapiclient.discovery import build
+        from googleapiclient.http import HttpMockSequence
+
+        gmail_client._service = build(
+            "gmail", "v1", http=HttpMockSequence(responses), static_discovery=True
+        )
+        return gmail_client
+
+    def test_apply_label_retries_transient_errors(self, gmail_client: GmailClient) -> None:
+        client = self._client_with_responses(gmail_client, [
+            ({"status": "503"}, "{}"),
+            ({"status": "429"}, "{}"),
+            ({"status": "200"}, '{"id": "m1"}'),
+        ])
+        with patch("googleapiclient.http.time.sleep") as sleep:
+            client.apply_label("m1", "Label_34")
+        assert sleep.call_count == 2
+
+    def test_apply_label_gives_up_after_retries(self, gmail_client: GmailClient) -> None:
+        from googleapiclient.errors import HttpError
+
+        client = self._client_with_responses(gmail_client, [({"status": "503"}, "{}")] * 5)
+        with patch("googleapiclient.http.time.sleep"), pytest.raises(HttpError):
+            client.apply_label("m1", "Label_34")
+
+    def test_label_lookup_retries_transient_errors(self, gmail_client: GmailClient) -> None:
+        client = self._client_with_responses(gmail_client, [
+            ({"status": "500"}, "{}"),
+            ({"status": "200"}, '{"labels": [{"id": "Label_34", "name": "Newsletters"}]}'),
+        ])
+        with patch("googleapiclient.http.time.sleep"):
+            assert client.get_or_create_label("Newsletters") == "Label_34"
