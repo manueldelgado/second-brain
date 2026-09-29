@@ -22,3 +22,9 @@ class GmailAuthError(BlockingError):
     """Gmail authorization is missing, expired or revoked."""
 
     component = "Gmail"
+
+
+class ConfigError(BlockingError):
+    """A config file (newsletters.yaml, taxonomy.yaml) is missing, unparsable or invalid."""
+
+    component = "Config"

@@ -6,8 +6,9 @@ never the inbox, which the inbox pipeline would pick up:
 
 - **Alert** (``🚨 Second Brain - Action needed (<component>).md``): written when a
   run is stopped by a :class:`~second_brain.errors.BlockingError` (Claude CLI
-  logged out, Gmail authorization revoked…), keeping the first-seen time and a
-  failed-run count; deleted by the next run in which that component works. One
+  logged out, Gmail authorization revoked, a config file that won't load…),
+  keeping the first-seen time and a failed-run count; deleted by the next run
+  in which that component works. One
   note per component, so a working inbox run never hides a Gmail problem.
 - **Status** (``💚 Second Brain - Status.md``): rewritten after every run that
   completes, with its time and counts — a heartbeat. If it goes stale, runs
@@ -139,8 +140,8 @@ def record_run(folder: Path, pipeline: str, summary: str, errors: int) -> Path:
         "|---|---|---|\n"
         + "\n".join(lines)
         + "\n\n"
-        "Problems that stop a run (Claude or Gmail logged out) get their own "
-        "*🚨 Second Brain - Action needed* note instead.\n\n"
+        "Problems that stop a run (Claude or Gmail logged out, a broken config file) "
+        "get their own *🚨 Second Brain - Action needed* note instead.\n\n"
         "## If it's stale\n\n"
         "- `launchctl list | grep second-brain` — the agent should be listed; "
         "the second column is the last exit code.\n"

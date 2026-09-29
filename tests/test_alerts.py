@@ -150,3 +150,75 @@ def test_run_stops_after_a_claude_block(monkeypatch) -> None:
     result = CliRunner().invoke(main.cli, ["--config-dir", ".", "run"])
     assert calls == ["newsletters"]
     assert result.exit_code == 1
+
+
+def _write_config(config_dir, vault_root, newsletters: str) -> None:
+    config_dir.mkdir()
+    (config_dir / "settings.yaml").write_text(
+        f"vault:\n  root: '{vault_root}'\nllm:\n  provider: claude_cli\n"
+    )
+    (config_dir / "newsletters.yaml").write_text(newsletters)
+    (config_dir / "taxonomy.yaml").write_text(
+        "descriptive:\n  ai/llms: LLMs\nfunctional:\n  func/blog: Blog\nclassification_rules: []\n"
+    )
+
+
+_BROKEN_NEWSLETTERS = (
+    "sources:\n"
+    '  - email: "newsletter@aisecret.us"\n'
+    '    name: "AI Secret"\n'
+    '    - email: "leo@aisecret.us"\n'
+    '    name: "AI Secret"\n'
+)
+
+
+@pytest.mark.parametrize("command", ["newsletters", "inbox", "run"])
+def test_broken_config_file_raises_config_alert(tmp_path, monkeypatch, command) -> None:
+    from click.testing import CliRunner
+
+    from second_brain import main
+
+    built = []
+    monkeypatch.setattr(main, "_build_llm", lambda settings: built.append("llm"))
+    _write_config(tmp_path / "config", tmp_path, _BROKEN_NEWSLETTERS)
+
+    result = CliRunner().invoke(main.cli, ["--config-dir", str(tmp_path / "config"), command])
+
+    assert result.exit_code == 1 and built == []
+    note = frontmatter.load(_notes(tmp_path) / alert_filename("Config"))
+    assert note["failed_runs"] == 1  # `run` stops after newsletters instead of failing twice
+    assert "newsletters.yaml" in note.content and "line 4" in note.content
+    assert "second-brain config check" in note.content
+    assert not (_notes(tmp_path) / STATUS_FILENAME).exists()
+
+
+def test_fixed_config_clears_config_alert(tmp_path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    from second_brain import main
+
+    monkeypatch.setattr(main, "_build_llm", lambda settings: None)
+    monkeypatch.setattr(
+        "second_brain.pipeline.inbox.run_inbox_pipeline",
+        lambda **kwargs: PipelineReport(pipeline_name="inbox"),
+    )
+    raise_alert(_notes(tmp_path), "Config", "p", "h", "run")
+    _write_config(tmp_path / "config", tmp_path, "sources: []\n")
+
+    result = CliRunner().invoke(main.cli, ["--config-dir", str(tmp_path / "config"), "inbox"])
+
+    assert result.exit_code == 0, result.output
+    assert not (_notes(tmp_path) / alert_filename("Config")).exists()
+
+
+def test_broken_settings_fails_without_alert(tmp_path) -> None:
+    from click.testing import CliRunner
+
+    from second_brain import main
+
+    _write_config(tmp_path / "config", tmp_path, "sources: []\n")
+    (tmp_path / "config" / "settings.yaml").write_text("vault: [\n")
+
+    result = CliRunner().invoke(main.cli, ["--config-dir", str(tmp_path / "config"), "inbox"])
+
+    assert result.exit_code == 1 and "settings.yaml is invalid" in result.output

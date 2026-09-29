@@ -32,6 +32,42 @@ def _load_all_config(config_dir: Path):
     return settings, newsletters, taxonomy
 
 
+def _load_settings(config_dir: Path):
+    """Load settings.yaml alone — it locates the vault, so its errors can't become an alert note."""
+    from second_brain.config import load_settings
+
+    try:
+        return load_settings(config_dir)
+    except Exception as exc:
+        raise click.ClickException(
+            f"{config_dir / 'settings.yaml'} is invalid (no alert note: the vault location "
+            f"comes from this file): {exc}"
+        ) from exc
+
+
+def _load_pipeline_config(config_dir: Path):
+    """Load newsletters.yaml and taxonomy.yaml, turning any failure into a ConfigError.
+
+    Both pipelines load both files, so a run that gets past this proves the whole
+    config is valid and may clear the "Config" alert.
+    """
+    from second_brain.config import load_newsletters, load_taxonomy
+    from second_brain.errors import ConfigError
+
+    loaded = []
+    for filename, loader in (("newsletters.yaml", load_newsletters), ("taxonomy.yaml", load_taxonomy)):
+        try:
+            loaded.append(loader(config_dir))
+        except Exception as exc:
+            raise ConfigError(
+                f"`{config_dir / filename}` could not be loaded: {exc}",
+                hint=f"Fix `{filename}` (the error above gives the line and column), then "
+                "check it with `second-brain config check`. If the file lives in the private "
+                "config repo, `git diff` in `config/` shows the latest edit.",
+            ) from exc
+    return tuple(loaded)
+
+
 def _build_vault(settings):
     from second_brain.vault.filesystem import FilesystemBackend
     from second_brain.vault.obsidian_cli import ObsidianCLIBackend
@@ -64,8 +100,9 @@ def _monitored_run(settings, command: str, dry_run: bool, components: tuple[str,
     Yields a dict; the command stores its PipelineReport under ``"report"``.
     A BlockingError becomes an alert note for its component and a failed
     command. A run that completes updates the status note and clears the alerts
-    of the *components* it exercised: "Gmail" (the newsletters run fetches from
-    it), "Claude" (building the CLI provider checks its login).
+    of the *components* it exercised: "Config" (both pipelines load every config
+    file), "Gmail" (the newsletters run fetches from it), "Claude" (building the
+    CLI provider checks its login).
     """
     from second_brain.alerts import clear_alert, raise_alert, record_run
     from second_brain.errors import BlockingError
@@ -172,18 +209,19 @@ def newsletters(ctx: click.Context, dry_run: bool, verbose: bool, batch: bool, n
     from second_brain.pipeline.newsletter import run_newsletter_pipeline
 
     config_dir = ctx.obj["config_dir"]
-    settings, nl_config, taxonomy = _load_all_config(config_dir)
-
-    vault = _build_vault(settings)
-    gmail = _build_gmail(settings)
-    _check_batch_supported(settings, batch)
-    sync_state = _build_sync_state(settings)
-
-    batch_provider = _build_batch_provider(settings) if batch else None
-    batch_state = _build_batch_state(settings) if batch else None
-
+    settings = _load_settings(config_dir)
     dry_run = dry_run or settings.processing.dry_run
-    with _monitored_run(settings, "newsletters", dry_run, ("Gmail", "Claude")) as run:
+    with _monitored_run(settings, "newsletters", dry_run, ("Config", "Gmail", "Claude")) as run:
+        nl_config, taxonomy = _load_pipeline_config(config_dir)
+
+        vault = _build_vault(settings)
+        gmail = _build_gmail(settings)
+        _check_batch_supported(settings, batch)
+        sync_state = _build_sync_state(settings)
+
+        batch_provider = _build_batch_provider(settings) if batch else None
+        batch_state = _build_batch_state(settings) if batch else None
+
         llm = _build_llm(settings)
         run["report"] = run_newsletter_pipeline(
             settings=settings,
@@ -222,16 +260,17 @@ def inbox(ctx: click.Context, dry_run: bool, verbose: bool, batch: bool, no_wait
     from second_brain.pipeline.inbox import run_inbox_pipeline
 
     config_dir = ctx.obj["config_dir"]
-    settings, _, taxonomy = _load_all_config(config_dir)
-
-    vault = _build_vault(settings)
-    _check_batch_supported(settings, batch)
-
-    batch_provider = _build_batch_provider(settings) if batch else None
-    batch_state = _build_batch_state(settings) if batch else None
-
+    settings = _load_settings(config_dir)
     dry_run = dry_run or settings.processing.dry_run
-    with _monitored_run(settings, "inbox", dry_run, ("Claude",)) as run:
+    with _monitored_run(settings, "inbox", dry_run, ("Config", "Claude")) as run:
+        _, taxonomy = _load_pipeline_config(config_dir)
+
+        vault = _build_vault(settings)
+        _check_batch_supported(settings, batch)
+
+        batch_provider = _build_batch_provider(settings) if batch else None
+        batch_state = _build_batch_state(settings) if batch else None
+
         llm = _build_llm(settings)
         run["report"] = run_inbox_pipeline(
             settings=settings,
@@ -259,13 +298,15 @@ def run(ctx: click.Context, dry_run: bool, verbose: bool, batch: bool, no_wait: 
     """Run both pipelines (newsletters + inbox)."""
     if verbose:
         _setup_logging(True)
+    from second_brain.errors import ConfigError
     from second_brain.llm.base import LLMUnavailableError
 
     try:
         ctx.invoke(newsletters, dry_run=dry_run, verbose=verbose, batch=batch, no_wait=no_wait)
     except click.ClickException as exc:
-        # A Gmail problem shouldn't stop the inbox; a Claude one would block it too.
-        if isinstance(exc.__cause__, LLMUnavailableError):
+        # A Gmail problem shouldn't stop the inbox; a Claude or config one would block it too
+        # (running it would only count the same failure twice in the alert note).
+        if isinstance(exc.__cause__, (LLMUnavailableError, ConfigError)):
             raise
         logger.error("Newsletters failed, continuing with inbox: %s", exc.message)
         ctx.invoke(inbox, dry_run=dry_run, verbose=verbose, batch=batch, no_wait=no_wait)
