@@ -222,3 +222,52 @@ def test_broken_settings_fails_without_alert(tmp_path) -> None:
     result = CliRunner().invoke(main.cli, ["--config-dir", str(tmp_path / "config"), "inbox"])
 
     assert result.exit_code == 1 and "settings.yaml is invalid" in result.output
+
+
+def test_unexpected_error_raises_alert_for_its_pipeline(tmp_path) -> None:
+    with pytest.raises(click.ClickException, match="inbox failed: OSError"):
+        with _monitored_run(_settings(tmp_path), "inbox", False, ("Claude",)):
+            raise OSError(11, "Resource deadlock avoided")
+    note = frontmatter.load(_notes(tmp_path) / alert_filename("Inbox"))
+    assert "Resource deadlock avoided" in note.content and "run.log" in note.content
+    assert not (_notes(tmp_path) / STATUS_FILENAME).exists()  # a crashed run isn't a success
+
+    with _monitored_run(_settings(tmp_path), "newsletters", False, ()) as run:
+        run["report"] = PipelineReport(pipeline_name="newsletters")
+    assert (_notes(tmp_path) / alert_filename("Inbox")).exists()  # newsletters can't vouch for inbox
+
+    with _monitored_run(_settings(tmp_path), "inbox", False, ()) as run:
+        run["report"] = PipelineReport(pipeline_name="inbox")
+    assert not (_notes(tmp_path) / alert_filename("Inbox")).exists()
+
+
+def test_click_errors_pass_through_without_alert(tmp_path) -> None:
+    with pytest.raises(click.UsageError):
+        with _monitored_run(_settings(tmp_path), "inbox", False, ()):
+            raise click.UsageError("--batch is not available")
+    assert not _notes(tmp_path).exists()
+
+
+def test_run_continues_with_inbox_after_a_newsletters_crash(tmp_path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    from second_brain import main
+
+    calls = []
+
+    @click.command()
+    def crashing_newsletters(**kwargs):
+        calls.append("newsletters")
+        with _monitored_run(_settings(tmp_path), "newsletters", False, ()):
+            raise KeyError("boom")
+
+    @click.command()
+    def working_inbox(**kwargs):
+        calls.append("inbox")
+
+    monkeypatch.setattr(main, "newsletters", crashing_newsletters)
+    monkeypatch.setattr(main, "inbox", working_inbox)
+    result = CliRunner().invoke(main.cli, ["--config-dir", ".", "run"])
+    assert calls == ["newsletters", "inbox"]
+    assert result.exit_code == 1
+    assert (_notes(tmp_path) / alert_filename("Newsletters")).exists()

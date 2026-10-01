@@ -243,3 +243,37 @@ def test_obsidian_cli_vault_name_defaults_to_folder_name(tmp_path: Path) -> None
     with patch("subprocess.run") as run:
         backend._run_cli("move", "a.md", "b.md")
     assert run.call_args.args[0][1] == 'vault="My Vault"'
+
+
+class TestICloudMaterialization:
+    def test_turns_on_dataless_downloads_for_the_process(self, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from second_brain.vault import icloud
+
+        libc = MagicMock()
+        libc.setiopolicy_np.return_value = 0
+        monkeypatch.setattr(icloud.sys, "platform", "darwin")
+        monkeypatch.setattr(icloud.ctypes, "CDLL", lambda *a, **k: libc)
+        icloud.enable_dataless_materialization()
+        # IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_PROCESS, ..._ON
+        libc.setiopolicy_np.assert_called_once_with(3, 0, 2)
+
+    def test_failure_is_only_logged(self, monkeypatch, caplog) -> None:
+        from unittest.mock import MagicMock
+
+        from second_brain.vault import icloud
+
+        libc = MagicMock()
+        libc.setiopolicy_np.return_value = -1
+        monkeypatch.setattr(icloud.sys, "platform", "darwin")
+        monkeypatch.setattr(icloud.ctypes, "CDLL", lambda *a, **k: libc)
+        icloud.enable_dataless_materialization()
+        assert "Could not enable iCloud" in caplog.text
+
+    def test_noop_outside_macos(self, monkeypatch) -> None:
+        from second_brain.vault import icloud
+
+        monkeypatch.setattr(icloud.sys, "platform", "linux")
+        monkeypatch.setattr(icloud.ctypes, "CDLL", lambda *a, **k: pytest.fail("called"))
+        icloud.enable_dataless_materialization()

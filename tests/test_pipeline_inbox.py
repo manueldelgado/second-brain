@@ -527,6 +527,37 @@ class TestRunInboxPipeline:
         assert report.items_created == 0
         assert len(report.errors) == 0
 
+    def test_unreadable_item_is_reported_and_others_processed(
+        self,
+        tmp_path: Path,
+        settings: Settings,
+        taxonomy: TaxonomyConfig,
+        analysis: ContentAnalysis,
+        monkeypatch,
+    ) -> None:
+        vault = FilesystemBackend(tmp_path)
+        _seed_inbox_note(vault, "Placeholder.md", "---\ntitle: Placeholder\n---\n\nBody.\n")
+        _seed_inbox_note(vault, "Readable.md", "---\ntitle: Readable\n---\n\nBody.\n")
+        read_note = vault.read_note
+
+        def read_or_deadlock(path):
+            # What an iCloud placeholder read gives a process with downloads off
+            if path.name == "Placeholder.md":
+                raise OSError(11, "Resource deadlock avoided")
+            return read_note(path)
+
+        monkeypatch.setattr(vault, "read_note", read_or_deadlock)
+        report = run_inbox_pipeline(
+            settings=settings,
+            taxonomy=taxonomy,
+            vault=vault,
+            llm=MockLLM(analysis),
+        )
+
+        assert report.items_created == 1
+        assert len(report.errors) == 1 and "Placeholder.md" in report.errors[0]
+        assert (tmp_path / "00 Inbox" / "Placeholder.md").exists()  # left for the next run
+
 
 class FakeBatchProvider:
     def __init__(self, analysis: ContentAnalysis) -> None:

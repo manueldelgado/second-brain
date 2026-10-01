@@ -88,7 +88,7 @@ def _run_sync(
 ) -> PipelineReport:
     report = PipelineReport(pipeline_name="inbox")
 
-    items = scan_inbox(vault, settings.vault.inbox_folder)
+    items = scan_inbox(vault, settings.vault.inbox_folder, errors=report.errors)
     logger.info("Found %d items in inbox", len(items))
 
     _enrich_items(items, settings, dry_run)
@@ -137,7 +137,7 @@ def _run_batch(
 ) -> PipelineReport:
     report = PipelineReport(pipeline_name="inbox (batch)")
 
-    items = scan_inbox(vault, settings.vault.inbox_folder)
+    items = scan_inbox(vault, settings.vault.inbox_folder, errors=report.errors)
     logger.info("Found %d items in inbox", len(items))
     # Items stay in the inbox until their batch is finalized — don't resubmit them.
     items = drop_already_pending(items, batch_state, "inbox")

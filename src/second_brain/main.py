@@ -13,6 +13,8 @@ load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
+_RUN_LOG = "~/.local/log/second-brain/run.log"
+
 
 def _setup_logging(verbose: bool) -> None:
     level = logging.DEBUG if verbose else logging.INFO
@@ -103,11 +105,17 @@ def _monitored_run(settings, command: str, dry_run: bool, components: tuple[str,
     of the *components* it exercised: "Config" (both pipelines load every config
     file), "Gmail" (the newsletters run fetches from it), "Claude" (building the
     CLI provider checks its login).
+
+    Any other exception (a bug, an unreadable vault) becomes an alert for the
+    command itself ("Newsletters", "Inbox"), cleared by its next completed run —
+    otherwise a crash would only show in the log while the status note, kept
+    fresh by the other pipeline, looks healthy.
     """
     from second_brain.alerts import clear_alert, raise_alert, record_run
     from second_brain.errors import BlockingError
 
     folder = Path(settings.vault.root) / settings.vault.notes_folder
+    crash_component = command.capitalize()
     run: dict = {}
     try:
         yield run
@@ -115,8 +123,22 @@ def _monitored_run(settings, command: str, dry_run: bool, components: tuple[str,
         if not dry_run:
             raise_alert(folder, exc.component, str(exc), exc.hint, command)
         raise click.ClickException(f"{exc}\n{exc.hint}") from exc
+    except (click.ClickException, click.Abort, click.exceptions.Exit):
+        raise  # usage errors and the like, meant for whoever typed the command
+    except Exception as exc:
+        logger.exception("%s run failed with an unexpected error", command)
+        problem = f"The {command} pipeline stopped with an unexpected error:\n\n`{type(exc).__name__}: {exc}`"
+        hint = (
+            f"The full traceback is in `{_RUN_LOG}`. A transient problem (network, iCloud) "
+            "goes away by itself: the next run that completes deletes this note. If the "
+            "failed-run count keeps growing, the error repeats on every run and needs a fix."
+        )
+        if not dry_run:
+            raise_alert(folder, crash_component, problem, hint, command)
+        raise click.ClickException(f"{command} failed: {type(exc).__name__}: {exc}") from exc
     if dry_run:
         return
+    clear_alert(folder, crash_component)
     for component in components:
         if component != "Claude" or settings.llm.provider == "claude_cli":
             clear_alert(folder, component)
@@ -182,7 +204,11 @@ def _build_batch_state(settings):
 @click.pass_context
 def cli(ctx: click.Context, config_dir: Path, verbose: bool) -> None:
     """Second Brain automation — newsletter ingestion and inbox processing."""
+    from second_brain.vault.icloud import enable_dataless_materialization
+
     _setup_logging(verbose)
+    # Before any vault read: under launchd, iCloud placeholders would raise EDEADLK.
+    enable_dataless_materialization()
     ctx.ensure_object(dict)
     ctx.obj["config_dir"] = config_dir
 

@@ -6,8 +6,8 @@ never the inbox, which the inbox pipeline would pick up:
 
 - **Alert** (``🚨 Second Brain - Action needed (<component>).md``): written when a
   run is stopped by a :class:`~second_brain.errors.BlockingError` (Claude CLI
-  logged out, Gmail authorization revoked, a config file that won't load…),
-  keeping the first-seen time and a failed-run count; deleted by the next run
+  logged out, Gmail authorization revoked, a config file that won't load…), or
+  by an unexpected exception (component = the pipeline, e.g. "Inbox"), keeping the first-seen time and a failed-run count; deleted by the next run
   in which that component works. One
   note per component, so a working inbox run never hides a Gmail problem.
 - **Status** (``💚 Second Brain - Status.md``): rewritten after every run that
