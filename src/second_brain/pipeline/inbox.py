@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from second_brain.config import Settings, TaxonomyConfig
+from second_brain.dates import parse_date
 from second_brain.enrich import clean_url, fetch_article
 from second_brain.errors import BlockingError
 from second_brain.llm.base import LLMProvider
@@ -399,7 +400,7 @@ def _build_frontmatter(
         # item.source_url is the multi-key, tracking-stripped, canonical URL.
         source=item.source_url or existing.get("source") or "",
         author=_resolve_author(existing.get("author"), item),
-        created=_sane_date(existing.get("created")) or date.today(),
+        created=parse_date(existing.get("created")) or date.today(),
         type=existing.get("type") or analysis.content_type,
         status=status,
         tags=tags,
@@ -551,25 +552,7 @@ def _resolve_published(existing_published: object, item: IngestItem) -> date | N
         item.metadata.get(_WEB_DATE_KEY),
         item.published,
     ):
-        parsed = _sane_date(candidate)
+        parsed = parse_date(candidate)
         if parsed is not None:
             return parsed
-    return None
-
-
-def _sane_date(value: object) -> date | None:
-    """Parse *value* into a date, rejecting implausible years (clipper garbage)."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        value = value.date()
-    if isinstance(value, date):
-        parsed = value
-    else:
-        try:
-            parsed = date.fromisoformat(str(value)[:10])
-        except (ValueError, TypeError):
-            return None
-    if 2005 <= parsed.year <= date.today().year + 1:
-        return parsed
     return None

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
 from pathlib import Path
 
 import frontmatter
+from pydantic import ValidationError
 
+from second_brain.dates import parse_date
 from second_brain.models import IngestItem
 from second_brain.vault.base import VaultBackend
 
@@ -27,6 +28,15 @@ def _extract_source_url(metadata: dict) -> str:
     return ""
 
 
+def _as_list(value: object) -> list[str]:
+    """Normalize a scalar/list/None frontmatter value into a list of strings."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value if v is not None]
+    return [str(value)]
+
+
 def scan_inbox(
     backend: VaultBackend,
     inbox_folder: str = "00 Inbox",
@@ -35,8 +45,9 @@ def scan_inbox(
     """Scan the inbox folder and return unprocessed items.
 
     A note that can't be read (e.g. an iCloud placeholder that fails to
-    download) is skipped and reported in *errors*, so it never stops the scan;
-    it stays in the inbox for the next run.
+    download) or whose frontmatter can't be validated is skipped and reported
+    in *errors*, so it never stops the scan; it stays in the inbox for the
+    next run.
     """
     items: list[IngestItem] = []
 
@@ -48,6 +59,11 @@ def scan_inbox(
                 logger.error("Could not read inbox item %s, skipped: %s", path.name, exc)
                 if errors is not None:
                     errors.append(f"{path.name}: could not read ({exc})")
+                continue
+            except ValidationError as exc:
+                logger.error("Invalid frontmatter in inbox item %s, skipped: %s", path.name, exc)
+                if errors is not None:
+                    errors.append(f"{path.name}: invalid frontmatter ({exc})")
                 continue
             if item is not None:
                 items.append(item)
@@ -70,11 +86,11 @@ def _parse_markdown_item(backend: VaultBackend, path: Path) -> IngestItem | None
 
     return IngestItem(
         source_type="inbox",
-        title=post.metadata.get("title", path.stem),
+        title=str(post.metadata.get("title") or path.stem),
         content=post.content,
         source_url=_extract_source_url(post.metadata),
-        author=post.metadata.get("author") or [],
-        published=post.metadata.get("published"),
+        author=_as_list(post.metadata.get("author")),
+        published=parse_date(post.metadata.get("published")),
         metadata={
             "original_path": str(path),
             "existing_frontmatter": dict(post.metadata),

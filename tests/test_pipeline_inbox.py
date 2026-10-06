@@ -527,6 +527,30 @@ class TestRunInboxPipeline:
         assert report.items_created == 0
         assert len(report.errors) == 0
 
+    def test_long_form_spanish_published_date(
+        self,
+        tmp_path: Path,
+        settings: Settings,
+        taxonomy: TaxonomyConfig,
+        analysis: ContentAnalysis,
+    ) -> None:
+        # Obsidian Web Clipper on a Spanish page writes the date spelled out
+        vault = FilesystemBackend(tmp_path)
+        _seed_inbox_note(
+            vault,
+            "Nvidia.md",
+            "---\ntitle: Nvidia\nauthor:\npublished: 6 de octubre de 2026\n---\n\nBody.\n",
+        )
+
+        report = run_inbox_pipeline(
+            settings=settings, taxonomy=taxonomy, vault=vault, llm=MockLLM(analysis)
+        )
+
+        assert report.items_created == 1
+        assert report.errors == []
+        content = vault.read_note(vault.list_folder("01 Notes")[0])
+        assert "published: '2026-10-06'" in content
+
     def test_unreadable_item_is_reported_and_others_processed(
         self,
         tmp_path: Path,
